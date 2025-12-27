@@ -236,7 +236,7 @@ with col4:
 
 with col5:
     if st.button("🤖 AI Portfolio", use_container_width=True):
-        st.switch_page("pages/05_AI_Portfolio.py")
+        st.switch_page("pages/06_AI_Portfolio.py")
 
 st.divider()
 st.caption("⚠️ Disclaimer: Educational purposes only. Not financial advice.")

@@ -11,7 +11,8 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils import AIPortfolioManager, StockAnalyzer, StorageManager
+from utils import AIPortfolioManager, StockAnalyzer
+from utils.storage import StorageManager
 
 st.set_page_config(page_title="AI Portfolio Manager", page_icon="🤖", layout="wide")
 
