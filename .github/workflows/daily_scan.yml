@@ -1,0 +1,55 @@
+# ============================================================================
+# FILE 7: .github/workflows/daily_scan.yml
+# GitHub Actions workflow for automated daily scanning
+# ============================================================================
+
+name: Daily Market Scanner
+
+on:
+  schedule:
+    # Runs at 9:30am ET (13:30 UTC) Monday-Saturday
+    - cron: '30 13 * * 1-6'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  scan-market:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: 🔍 Run market scanner
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        run: |
+          python scanner/run_daily_scan.py
+      
+      - name: 💾 Commit results
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/*.json
+          git diff --quiet && git diff --staged --quiet || git commit -m "🤖 Daily scan: $(date +'%Y-%m-%d %H:%M')"
+      
+      - name: 📤 Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+

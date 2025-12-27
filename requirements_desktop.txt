@@ -1,0 +1,11 @@
+streamlit==1.31.0
+yfinance==0.2.36
+plotly==5.18.0
+pandas==2.2.0
+requests==2.31.0
+python-dotenv==1.0.1
+numpy==1.26.3
+PyQt5==5.15.10
+PyQtWebEngine==5.15.6
+pyinstaller==6.3.0
+

@@ -1,0 +1,39 @@
+# ============================================================================
+# FILE 8: config.yaml
+# Scanner configuration
+# ============================================================================
+
+scanner:
+  # Parallel workers for scanning
+  max_workers: 10
+  
+  # Scoring thresholds
+  thresholds:
+    hot: 80      # Score >= 80
+    warming: 70  # Score 70-79
+    watching: 60 # Score 60-69
+  
+  # Risk management
+  risk:
+    default_stop_loss_pct: 10  # 10% stop loss
+    default_target_pct: 15     # 15% profit target
+    max_loss_per_trade_pct: 2  # 2% max portfolio risk
+  
+  # Cache settings
+  cache:
+    price_data_hours: 1    # Cache price data for 1 hour
+    fundamentals_hours: 24 # Cache fundamentals for 24 hours
+
+notifications:
+  enabled: false  # Set to true when you add SendGrid
+  email:
+    from: "scanner@hedgefund.app"
+    to: "your_email@example.com"
+  
+  daily_digest:
+    enabled: true
+    time: "08:00"  # 8am ET
+    
+  instant_alerts:
+    enabled: false  # For future push notifications
+
