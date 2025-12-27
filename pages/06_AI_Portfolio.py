@@ -173,19 +173,19 @@ with st.sidebar:
                 results['hot'].sort(key=lambda x: x['score']['total_score'], reverse=True)
                 results['warming'].sort(key=lambda x: x['score']['total_score'], reverse=True)
                 results['watching'].sort(key=lambda x: x['score']['total_score'], reverse=True)
-                    
-                    # Save results
-                    storage.save_hot_stocks(results['hot'])
-                    storage.save_warming_stocks(results['warming'])
-                    storage.save_watching_stocks(results['watching'])
-                    
-                    # Update progress
-                    progress = storage.load_scan_progress()
-                    progress['last_scan'] = datetime.now().isoformat()
-                    storage.save_scan_progress(progress)
-                    
-                    st.success(f"✅ Scanner complete! Found {len(results['hot'])} hot stocks, {len(results['warming'])} warming, {len(results['watching'])} watching")
-                    st.rerun()
+                
+                # Save results
+                storage.save_hot_stocks(results['hot'])
+                storage.save_warming_stocks(results['warming'])
+                storage.save_watching_stocks(results['watching'])
+                
+                # Update progress
+                progress = storage.load_scan_progress()
+                progress['last_scan'] = datetime.now().isoformat()
+                storage.save_scan_progress(progress)
+                
+                st.success(f"✅ Scanner complete! Found {len(results['hot'])} hot stocks, {len(results['warming'])} warming, {len(results['watching'])} watching")
+                st.rerun()
         else:
             st.success(f"✅ {hot_count} hot stocks available from scanner")
         
