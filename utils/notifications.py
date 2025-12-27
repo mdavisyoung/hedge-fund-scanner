@@ -11,7 +11,11 @@ from dotenv import load_dotenv
 import yaml
 from pathlib import Path
 
-load_dotenv()
+try:
+    load_dotenv()
+except (UnicodeDecodeError, FileNotFoundError):
+    # Handle encoding issues or missing .env file
+    pass
 
 
 class NotificationManager:

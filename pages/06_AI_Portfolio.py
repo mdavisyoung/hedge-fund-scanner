@@ -90,8 +90,13 @@ with st.sidebar:
                 hot_data = storage.load_hot_stocks()
                 hot_stocks = [s['ticker'] for s in hot_data.get('stocks', [])]
                 
-                portfolio = portfolio_manager.auto_manage_portfolio(portfolio, hot_stocks)
+                portfolio, activity_log = portfolio_manager.auto_manage_portfolio(portfolio, hot_stocks)
                 storage.save_portfolio(portfolio)
+                
+                # Store activity log in session state to display
+                st.session_state['last_activity_log'] = activity_log
+                st.session_state['last_activity_time'] = datetime.now().isoformat()
+                
                 st.success("Portfolio managed!")
                 st.rerun()
         
@@ -135,6 +140,36 @@ else:
     
     positions = portfolio.get("positions", {})
     num_positions = len(positions)
+    
+    # Activity Log Section
+    if st.session_state.get('last_activity_log'):
+        st.subheader("📋 Last Activity Log")
+        activity_log = st.session_state.get('last_activity_log', [])
+        last_time = st.session_state.get('last_activity_time')
+        
+        if last_time:
+            try:
+                time_obj = datetime.fromisoformat(last_time)
+                time_str = time_obj.strftime("%Y-%m-%d %H:%M:%S")
+                st.caption(f"Last run: {time_str}")
+            except:
+                pass
+        
+        # Display activity log in an expandable section
+        with st.expander("View Activity Details", expanded=True):
+            for activity in activity_log:
+                if "BOUGHT" in activity or "✅" in activity:
+                    st.success(activity)
+                elif "SOLD" in activity or "💰" in activity:
+                    st.info(activity)
+                elif "❌" in activity or "Failed" in activity:
+                    st.error(activity)
+                elif "⚠️" in activity:
+                    st.warning(activity)
+                else:
+                    st.write(activity)
+        
+        st.divider()
     
     # Key metrics
     col1, col2, col3, col4, col5 = st.columns(5)

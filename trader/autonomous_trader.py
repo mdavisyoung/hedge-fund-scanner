@@ -18,7 +18,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 from utils.notifications import NotificationManager
 
 # Load environment variables
-load_dotenv()
+try:
+    load_dotenv()
+except (UnicodeDecodeError, FileNotFoundError):
+    # Handle encoding issues or missing .env file
+    pass
 
 try:
     from alpaca.trading.client import TradingClient

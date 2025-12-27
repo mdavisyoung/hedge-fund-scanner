@@ -584,37 +584,72 @@ class AIPortfolioManager:
         
         return {"success": True, "proceeds": proceeds, "pnl": pnl}
     
-    def auto_manage_portfolio(self, portfolio: Dict, available_stocks: List[str] = None) -> Dict:
+    def auto_manage_portfolio(self, portfolio: Dict, available_stocks: List[str] = None) -> Tuple[Dict, List[str]]:
         """
         Automatically manage portfolio: check exits, add contributions, evaluate new entries
+        Returns: (updated_portfolio, activity_log)
         """
         from datetime import datetime
         
+        activity_log = []
+        
         # Add monthly contribution
+        old_contrib = portfolio.get("total_contributed", 0)
         portfolio = self.add_monthly_contribution(portfolio)
+        new_contrib = portfolio.get("total_contributed", 0)
+        if new_contrib > old_contrib:
+            amount = new_contrib - old_contrib
+            activity_log.append(f"✅ Added monthly contribution: ${amount:.2f}")
         
         # Check exit conditions for existing positions
         positions_to_exit = []
         for ticker in list(portfolio.get("positions", {}).keys()):
+            activity_log.append(f"🔍 Checking exit conditions for {ticker}...")
             exit_check = self.check_exit_conditions(portfolio, ticker)
             if exit_check.get("should_exit", False):
                 positions_to_exit.append((ticker, exit_check))
+                activity_log.append(f"⚠️ {ticker}: {exit_check.get('reason', 'Exit triggered')}")
         
         # Execute exits
         for ticker, exit_info in positions_to_exit:
-            self.execute_sell(portfolio, ticker, exit_info)
+            sell_result = self.execute_sell(portfolio, ticker, exit_info)
+            if sell_result.get("success", False):
+                pnl = exit_info.get("pnl", 0)
+                pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"${pnl:.2f}"
+                activity_log.append(f"💰 SOLD {ticker}: {exit_info.get('reason', 'Exit')} | P&L: {pnl_str}")
+            else:
+                activity_log.append(f"❌ Failed to sell {ticker}: {sell_result.get('error', 'Unknown error')}")
         
         # Evaluate new opportunities if we have cash and available stocks
         if available_stocks and portfolio.get("current_cash", 0) > 10:
+            activity_log.append(f"🔎 Evaluating {len(available_stocks[:5])} opportunities...")
             for ticker in available_stocks[:5]:  # Check top 5 opportunities
                 if ticker in portfolio.get("positions", {}):
                     continue
                 
+                activity_log.append(f"📊 Analyzing {ticker}...")
                 eval_result = self.evaluate_trade_opportunity(portfolio, ticker)
+                
                 if eval_result.get("should_trade", False):
                     buy_result = self.execute_buy(portfolio, ticker, eval_result)
                     if buy_result.get("success", False):
+                        shares = eval_result["position_info"]["shares"]
+                        price = eval_result["evaluation"]["fundamentals"]["current_price"]
+                        cost = buy_result.get("cost", 0)
+                        activity_log.append(f"🟢 BOUGHT {shares} shares of {ticker} @ ${price:.2f} | Cost: ${cost:.2f}")
                         break  # Only enter one position at a time
+                    else:
+                        activity_log.append(f"❌ Failed to buy {ticker}: {buy_result.get('error', 'Unknown error')}")
+                else:
+                    reason = eval_result.get("reason", "Does not meet criteria")
+                    activity_log.append(f"⏸️ Skipped {ticker}: {reason}")
+        elif not available_stocks:
+            activity_log.append("ℹ️ No hot stocks available from scanner")
+        elif portfolio.get("current_cash", 0) <= 10:
+            activity_log.append(f"ℹ️ Insufficient cash (${portfolio.get('current_cash', 0):.2f}) for new positions")
+        
+        if not activity_log:
+            activity_log.append("ℹ️ No actions taken - portfolio is up to date")
         
         portfolio["last_managed"] = datetime.now().isoformat()
-        return portfolio
+        return portfolio, activity_log

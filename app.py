@@ -5,7 +5,26 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+try:
+    load_dotenv()
+except UnicodeDecodeError:
+    # Handle encoding issues with .env file
+    import io
+    try:
+        with open('.env', 'rb') as f:
+            content = f.read()
+            # Try to decode as UTF-8, ignoring errors
+            content_str = content.decode('utf-8', errors='ignore')
+            # Write back as proper UTF-8
+            with open('.env', 'w', encoding='utf-8') as f_out:
+                f_out.write(content_str)
+        load_dotenv()
+    except FileNotFoundError:
+        # .env file doesn't exist, that's okay
+        pass
+    except Exception:
+        # If still fails, just skip loading .env
+        pass
 
 st.set_page_config(
     page_title="Personal Hedge Fund Manager",

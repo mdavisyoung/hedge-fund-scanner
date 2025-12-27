@@ -1,0 +1,16 @@
+{
+  "initial_cash": 100.0,
+  "monthly_contribution": 100.0,
+  "current_cash": 100.0,
+  "total_contributed": 100.0,
+  "positions": {},
+  "trade_history": [],
+  "created_at": "2025-12-27T16:53:46.370811",
+  "last_contribution_date": "2025-12-27T16:53:46.370817",
+  "settings": {
+    "max_loss_per_trade": 2.0,
+    "risk_tolerance": 5,
+    "max_position_size_pct": 20.0,
+    "min_stock_score": 80
+  }
+}
