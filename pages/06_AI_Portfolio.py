@@ -91,22 +91,88 @@ with st.sidebar:
         if hot_count == 0:
             st.warning(f"⚠️ No hot stocks available. Run scanner first!")
             if st.button("🔍 Run Stock Scanner", use_container_width=True, type="primary"):
-                with st.spinner("Running stock scanner... This may take a few minutes..."):
-                    from scanner.market_scanner import MarketScanner
-                    from datetime import datetime
+                from scanner.market_scanner import MarketScanner
+                from scanner.stock_universe import get_daily_batch
+                from datetime import datetime
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                
+                today = datetime.now().weekday()
+                
+                # On weekends, scan Monday's batch for testing
+                if today >= 5:  # Saturday (5) or Sunday (6)
+                    st.info("📅 Weekend detected - scanning Monday's batch for testing")
+                    scan_day = 0  # Monday
+                else:
+                    scan_day = today
+                
+                # Get stock list
+                tickers = get_daily_batch(scan_day)
+                day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                
+                st.info(f"📊 **Scanning {len(tickers)} stocks from {day_names[scan_day]}'s batch**")
+                st.caption("💡 **How it works:** Uses a hardcoded list of ~200+ S&P 500 stocks organized by sector. Pulls live data from Yahoo Finance API (yfinance) for each stock.")
+                
+                # Progress tracking
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                results_container = st.empty()
+                
+                scanner = MarketScanner(max_workers=10)
+                results = {
+                    'hot': [],
+                    'warming': [],
+                    'watching': [],
+                    'scanned_at': datetime.now().isoformat(),
+                    'day_of_week': scan_day,
+                    'total_scanned': len(tickers)
+                }
+                
+                # Scan with progress updates
+                completed = 0
+                current_stocks = []
+                
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    future_to_ticker = {
+                        executor.submit(scanner._scan_single_stock, ticker): ticker 
+                        for ticker in tickers
+                    }
                     
-                    scanner = MarketScanner(max_workers=10)
-                    today = datetime.now().weekday()
-                    
-                    # On weekends, scan Monday's batch for testing
-                    if today >= 5:  # Saturday (5) or Sunday (6)
-                        st.info("📅 Weekend detected - scanning Monday's batch for testing")
-                        scan_day = 0  # Monday
-                    else:
-                        scan_day = today
-                    
-                    # Run scan for selected day's batch
-                    results = scanner.scan_daily_batch(scan_day)
+                    for future in as_completed(future_to_ticker):
+                        completed += 1
+                        ticker = future_to_ticker[future]
+                        
+                        # Update progress
+                        progress = completed / len(tickers)
+                        progress_bar.progress(progress)
+                        
+                        # Show current stock being processed
+                        current_stocks.append(ticker)
+                        if len(current_stocks) > 5:
+                            current_stocks.pop(0)
+                        
+                        status_text.markdown(f"**Progress:** {completed}/{len(tickers)} stocks ({progress*100:.1f}%) | Currently scanning: {', '.join(current_stocks[-3:])}")
+                        
+                        # Show results so far
+                        results_text = f"🔥 Hot: {len(results['hot'])} | 🟡 Warming: {len(results['warming'])} | 👀 Watching: {len(results['watching'])}"
+                        results_container.markdown(f"**Results so far:** {results_text}")
+                        
+                        try:
+                            result = future.result()
+                            if result:
+                                score = result['score']['total_score']
+                                if score >= 80:
+                                    results['hot'].append(result)
+                                elif score >= 70:
+                                    results['warming'].append(result)
+                                elif score >= 60:
+                                    results['watching'].append(result)
+                        except Exception as e:
+                            pass  # Skip errors
+                
+                # Sort results
+                results['hot'].sort(key=lambda x: x['score']['total_score'], reverse=True)
+                results['warming'].sort(key=lambda x: x['score']['total_score'], reverse=True)
+                results['watching'].sort(key=lambda x: x['score']['total_score'], reverse=True)
                     
                     # Save results
                     storage.save_hot_stocks(results['hot'])
