@@ -1,0 +1,109 @@
+name: Test Scanner (Manual)
+
+on:
+  # Manual trigger only - no schedule
+  workflow_dispatch:
+    inputs:
+      stock_count:
+        description: 'Number of stocks to scan'
+        required: false
+        default: '20'
+
+jobs:
+  test-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run test scanner
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        run: |
+          python -c "
+          import sys
+          from pathlib import Path
+          import time
+
+          sys.path.append(str(Path.cwd()))
+          from scanner.market_scanner import MarketScanner
+
+          # Test stocks
+          test_stocks = [
+              'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA',
+              'META', 'TSLA', 'AMD', 'NFLX', 'CRM',
+              'JPM', 'BAC', 'WFC', 'GS', 'MS',
+              'JNJ', 'PFE', 'UNH', 'CVS', 'ABBV'
+          ][:int('${{ github.event.inputs.stock_count }}' or 20)]
+
+          print(f'Scanning {len(test_stocks)} stocks...')
+
+          scanner = MarketScanner()
+          results = []
+
+          for i, ticker in enumerate(test_stocks, 1):
+              print(f'[{i}/{len(test_stocks)}] {ticker}...', end=' ')
+              try:
+                  result = scanner._scan_single_stock(ticker)
+                  if result:
+                      print(f'✓ {result[\"score\"][\"total_score\"]:.1f}')
+                      results.append(result)
+                  else:
+                      print('✗')
+              except Exception as e:
+                  print(f'Error: {str(e)[:50]}')
+
+              # Delay to avoid rate limits
+              if i < len(test_stocks):
+                  time.sleep(2)
+
+          # Categorize
+          hot = [s for s in results if s['score']['total_score'] >= 80]
+          warming = [s for s in results if 70 <= s['score']['total_score'] < 80]
+          watching = [s for s in results if 60 <= s['score']['total_score'] < 70]
+
+          print(f'\nResults:')
+          print(f'Hot: {len(hot)}')
+          print(f'Warming: {len(warming)}')
+          print(f'Watching: {len(watching)}')
+
+          # Save
+          scanner.storage.save_hot_stocks(hot)
+          scanner.storage.save_warming_stocks(warming)
+          scanner.storage.save_watching_stocks(watching)
+
+          print('✅ Results saved!')
+          "
+
+      - name: Commit results
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Check if data directory has files to commit
+          if [ -n "$(ls -A data/*.json 2>/dev/null)" ]; then
+            git add data/*.json
+            if ! git diff --quiet HEAD -- data/ 2>/dev/null; then
+              git commit -m "🧪 Test scan results: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+              git push
+              echo "✅ Test results committed and pushed"
+            else
+              echo "ℹ️ No changes to commit"
+            fi
+          else
+            echo "⚠️ No data files generated - scan may have failed"
+            exit 1
+          fi

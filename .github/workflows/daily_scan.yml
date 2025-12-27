@@ -39,8 +39,19 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/ || true
-          git diff --quiet && git diff --staged --quiet || git commit -m "🤖 Daily scan: $(date +'%Y-%m-%d %H:%M')" || true
+
+          # Check if data directory has files to commit
+          if [ -n "$(ls -A data/*.json 2>/dev/null)" ]; then
+            git add data/*.json
+            if ! git diff --quiet HEAD -- data/ 2>/dev/null; then
+              git commit -m "🤖 Daily scan: $(date +'%Y-%m-%d %H:%M')"
+              echo "✅ Changes committed"
+            else
+              echo "ℹ️ No changes to commit"
+            fi
+          else
+            echo "ℹ️ No data files generated (this is normal on weekends)"
+          fi
       
       - name: 📤 Push changes
         uses: ad-m/github-push-action@master
