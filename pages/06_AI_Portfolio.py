@@ -98,8 +98,15 @@ with st.sidebar:
                     scanner = MarketScanner(max_workers=10)
                     today = datetime.now().weekday()
                     
-                    # Run scan for today's batch
-                    results = scanner.scan_daily_batch(today)
+                    # On weekends, scan Monday's batch for testing
+                    if today >= 5:  # Saturday (5) or Sunday (6)
+                        st.info("📅 Weekend detected - scanning Monday's batch for testing")
+                        scan_day = 0  # Monday
+                    else:
+                        scan_day = today
+                    
+                    # Run scan for selected day's batch
+                    results = scanner.scan_daily_batch(scan_day)
                     
                     # Save results
                     storage.save_hot_stocks(results['hot'])
