@@ -64,9 +64,17 @@ with st.sidebar:
     st.subheader("Universe Summary")
     summary = get_stock_universe_summary()
     st.metric("Total Stocks", summary["total_unique_stocks"])
-    st.caption(f"Tech/Growth: {summary['tech_growth']} | "
-              f"Financials: {summary['financials']} | "
-              f"Healthcare: {summary['healthcare']}")
+    
+    # Handle different summary structures (dynamic vs hardcoded)
+    if summary.get('source') == 'dynamic_exchange_fetch':
+        per_day = summary.get('per_day_average', 0)
+        cached_at = summary.get('cached_at', 'Unknown')
+        st.caption(f"📊 Dynamic mode: ~{per_day} stocks per day | "
+                  f"Cached: {cached_at[:10] if cached_at != 'Unknown' else 'Unknown'}")
+    else:
+        st.caption(f"Tech/Growth: {summary.get('tech_growth', 'N/A')} | "
+                  f"Financials: {summary.get('financials', 'N/A')} | "
+                  f"Healthcare: {summary.get('healthcare', 'N/A')}")
 
 # Main content
 if run_scan:
