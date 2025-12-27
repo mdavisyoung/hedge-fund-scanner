@@ -26,7 +26,8 @@ class StorageManager:
             'warming': self.data_dir / 'warming_stocks.json',
             'watching': self.data_dir / 'watching_stocks.json',
             'progress': self.data_dir / 'scan_progress.json',
-            'history': self.data_dir / 'trade_history.json'
+            'history': self.data_dir / 'trade_history.json',
+            'portfolio': self.data_dir / 'ai_portfolio.json'
         }
     
     def load_hot_stocks(self):
@@ -96,6 +97,14 @@ class StorageManager:
         trade_data['executed_at'] = datetime.now().isoformat()
         history['trades'].insert(0, trade_data)  # Add to front
         self.save_trade_history(history)
+    
+    def load_portfolio(self):
+        """Load AI portfolio state"""
+        return self._load_json(self.files['portfolio'], default=None)
+    
+    def save_portfolio(self, portfolio_data):
+        """Save AI portfolio state"""
+        self._save_json(self.files['portfolio'], portfolio_data)
     
     def _load_json(self, filepath, default=None):
         """Load JSON file with error handling"""

@@ -141,13 +141,28 @@ ANALYSIS FRAMEWORK:
    - Position value = Shares × Stock price
 
 OUTPUT FORMAT:
-Provide a clear, well-structured analysis in 3-4 paragraphs covering:
-1. Stock analysis and recommendation (BUY/HOLD/AVOID)
-2. Entry price, position sizing, and stop-loss levels
-3. Risk management and exit conditions
-4. Portfolio fit and diversification notes
+Provide a CLEAR, STRUCTURED analysis with these sections:
 
-Use clear numbers, proper calculations, and avoid confusing technical jargon."""
+**RECOMMENDATION:** [BUY/HOLD/AVOID] - [One sentence summary]
+
+**ANALYSIS:**
+- Stock Type: [Growth/Value/Financial/Cyclical]
+- Key Strengths: [2-3 bullet points]
+- Key Concerns: [1-2 bullet points]
+
+**POSITION DETAILS:**
+- Entry Price: $[X.XX]
+- Recommended Shares: [X] shares
+- Position Value: $[XXX.XX]
+- Stop-Loss: $[X.XX] (-[X]%)
+- Target Price: $[X.XX] (+[X]%)
+- Maximum Risk: $[XX.XX] ([X]% of portfolio)
+
+**RISK MANAGEMENT:**
+- Exit Conditions: [When to sell]
+- Portfolio Fit: [Diversification notes]
+
+Use clear numbers, proper calculations, and simple language. Format with markdown headers and bullet points for easy reading."""
     
     def generate_strategy(self, stock_data: Dict, user_prefs: Dict) -> str:
         if not self.api_key:
@@ -209,13 +224,14 @@ POSITION SIZING CALCULATION (for reference):
 - Recommended Shares: {shares} shares
 - Position Value: ${position_value:.2f}
 
-Provide a clear, professional investment strategy analysis covering:
-1. Overall recommendation (BUY/HOLD/AVOID) with reasoning
-2. Entry strategy and position sizing recommendations
-3. Stop-loss and exit conditions
-4. Risk assessment and portfolio fit
+Provide a CLEAR, STRUCTURED analysis using the format specified in the system prompt.
 
-Use accurate calculations and clear, readable language. Avoid confusing numbers or incorrect math."""
+IMPORTANT: 
+- Use the exact format with **RECOMMENDATION**, **ANALYSIS**, **POSITION DETAILS**, and **RISK MANAGEMENT** sections
+- Show ALL calculations clearly
+- Use markdown formatting (headers, bullet points)
+- Keep language simple and professional
+- Double-check all math before outputting"""
         
         try:
             response = requests.post(
@@ -287,3 +303,318 @@ class PortfolioSimulator:
             "max_loss": max_loss,
             "position_pct": (position_value / portfolio_value * 100) if portfolio_value > 0 else 0
         }
+
+
+class AIPortfolioManager:
+    """
+    Automated portfolio manager that starts with $100 and adds $100/month.
+    Uses AI to make trading decisions and automatically manage positions.
+    """
+    
+    def __init__(self, storage_manager=None):
+        self.storage = storage_manager
+        self.analyzer = StockAnalyzer()
+        self.strategy_gen = XAIStrategyGenerator()
+        self.simulator = PortfolioSimulator()
+        
+    def initialize_portfolio(self, initial_cash: float = 100.0, monthly_contribution: float = 100.0):
+        """Initialize a new portfolio"""
+        from datetime import datetime
+        
+        portfolio = {
+            "initial_cash": initial_cash,
+            "monthly_contribution": monthly_contribution,
+            "current_cash": initial_cash,
+            "total_contributed": initial_cash,
+            "positions": {},  # {ticker: {shares, entry_price, stop_loss, target, entry_date}}
+            "trade_history": [],
+            "created_at": datetime.now().isoformat(),
+            "last_contribution_date": datetime.now().isoformat(),
+            "settings": {
+                "max_loss_per_trade": 2.0,  # 2% max loss per trade
+                "risk_tolerance": 5,  # 1-10 scale
+                "max_position_size_pct": 20.0,  # Max 20% in single position
+                "min_stock_score": 80,  # Minimum score to enter trade
+            }
+        }
+        return portfolio
+    
+    def get_portfolio_value(self, portfolio: Dict) -> float:
+        """Calculate total portfolio value (cash + positions)"""
+        total = portfolio.get("current_cash", 0)
+        
+        for ticker, position in portfolio.get("positions", {}).items():
+            try:
+                current_price = self.analyzer.get_fundamentals(ticker).get("current_price", 0)
+                shares = position.get("shares", 0)
+                total += current_price * shares
+            except:
+                # If we can't get price, use entry price
+                total += position.get("entry_price", 0) * position.get("shares", 0)
+        
+        return total
+    
+    def add_monthly_contribution(self, portfolio: Dict) -> Dict:
+        """Add monthly contribution if it's been a month since last contribution"""
+        from datetime import datetime, timedelta
+        
+        last_contrib = datetime.fromisoformat(portfolio.get("last_contribution_date", datetime.now().isoformat()))
+        now = datetime.now()
+        
+        # Check if a month has passed (approximately 30 days)
+        if (now - last_contrib).days >= 30:
+            monthly_amount = portfolio.get("monthly_contribution", 100.0)
+            portfolio["current_cash"] += monthly_amount
+            portfolio["total_contributed"] += monthly_amount
+            portfolio["last_contribution_date"] = now.isoformat()
+        
+        return portfolio
+    
+    def calculate_position_size(self, portfolio: Dict, ticker: str, stock_price: float, 
+                                 stop_loss_pct: float = 10.0) -> Dict:
+        """Calculate position size based on risk management rules"""
+        portfolio_value = self.get_portfolio_value(portfolio)
+        max_loss_pct = portfolio.get("settings", {}).get("max_loss_per_trade", 2.0)
+        max_position_pct = portfolio.get("settings", {}).get("max_position_size_pct", 20.0)
+        
+        # Calculate based on max loss
+        max_loss_amount = portfolio_value * (max_loss_pct / 100)
+        stop_loss_distance = stock_price * (stop_loss_pct / 100)
+        
+        if stop_loss_distance <= 0:
+            return {"shares": 0, "position_value": 0, "max_loss": 0}
+        
+        shares_by_risk = int(max_loss_amount / stop_loss_distance)
+        
+        # Calculate based on max position size
+        max_position_value = portfolio_value * (max_position_pct / 100)
+        shares_by_size = int(max_position_value / stock_price) if stock_price > 0 else 0
+        
+        # Use the smaller of the two
+        shares = min(shares_by_risk, shares_by_size)
+        position_value = shares * stock_price
+        
+        return {
+            "shares": shares,
+            "position_value": position_value,
+            "stop_loss_price": stock_price * (1 - stop_loss_pct / 100),
+            "max_loss": max_loss_amount,
+            "position_pct": (position_value / portfolio_value * 100) if portfolio_value > 0 else 0
+        }
+    
+    def evaluate_trade_opportunity(self, portfolio: Dict, ticker: str) -> Dict:
+        """Evaluate if a stock is a good trade opportunity"""
+        evaluation = self.analyzer.evaluate_stock(ticker)
+        
+        if "error" in evaluation:
+            return {"should_trade": False, "reason": evaluation["error"]}
+        
+        fundamentals = evaluation["fundamentals"]
+        stock_price = fundamentals.get("current_price", 0)
+        min_score = portfolio.get("settings", {}).get("min_stock_score", 80)
+        
+        # Get score from scanner if available, otherwise use evaluation
+        # For now, use a simple scoring based on criteria passed
+        criteria_passed = evaluation.get("passed", 0)
+        criteria_total = evaluation.get("total", 1)
+        score = (criteria_passed / criteria_total) * 100 if criteria_total > 0 else 0
+        
+        # Check if we have enough cash
+        position_info = self.calculate_position_size(portfolio, ticker, stock_price)
+        required_cash = position_info["position_value"]
+        available_cash = portfolio.get("current_cash", 0)
+        
+        # Check if already holding
+        existing_position = portfolio.get("positions", {}).get(ticker)
+        
+        result = {
+            "should_trade": False,
+            "ticker": ticker,
+            "evaluation": evaluation,
+            "position_info": position_info,
+            "score": score,
+            "reason": ""
+        }
+        
+        if existing_position:
+            result["reason"] = f"Already holding {ticker}"
+            return result
+        
+        if score < min_score:
+            result["reason"] = f"Score {score:.1f} below minimum {min_score}"
+            return result
+        
+        if required_cash > available_cash:
+            result["reason"] = f"Insufficient cash. Need ${required_cash:.2f}, have ${available_cash:.2f}"
+            return result
+        
+        if position_info["shares"] == 0:
+            result["reason"] = "Position size calculation resulted in 0 shares"
+            return result
+        
+        result["should_trade"] = True
+        result["reason"] = "Meets all criteria"
+        return result
+    
+    def execute_buy(self, portfolio: Dict, ticker: str, evaluation_result: Dict) -> Dict:
+        """Execute a buy order"""
+        from datetime import datetime
+        
+        position_info = evaluation_result["position_info"]
+        evaluation = evaluation_result["evaluation"]
+        fundamentals = evaluation["fundamentals"]
+        
+        shares = position_info["shares"]
+        entry_price = fundamentals.get("current_price", 0)
+        cost = shares * entry_price
+        
+        if cost > portfolio.get("current_cash", 0):
+            return {"success": False, "error": "Insufficient cash"}
+        
+        # Create position
+        position = {
+            "shares": shares,
+            "entry_price": entry_price,
+            "stop_loss": position_info["stop_loss_price"],
+            "target": entry_price * 1.20,  # 20% target
+            "entry_date": datetime.now().isoformat(),
+            "stock_type": evaluation.get("stock_type", "Unknown"),
+            "score": evaluation_result["score"]
+        }
+        
+        portfolio["positions"][ticker] = position
+        portfolio["current_cash"] -= cost
+        
+        # Add to trade history
+        trade = {
+            "ticker": ticker,
+            "action": "BUY",
+            "shares": shares,
+            "price": entry_price,
+            "total_cost": cost,
+            "timestamp": datetime.now().isoformat()
+        }
+        portfolio["trade_history"].append(trade)
+        
+        return {"success": True, "position": position, "cost": cost}
+    
+    def check_exit_conditions(self, portfolio: Dict, ticker: str) -> Dict:
+        """Check if a position should be exited"""
+        position = portfolio.get("positions", {}).get(ticker)
+        if not position:
+            return {"should_exit": False}
+        
+        try:
+            fundamentals = self.analyzer.get_fundamentals(ticker)
+            current_price = fundamentals.get("current_price", 0)
+            entry_price = position.get("entry_price", 0)
+            stop_loss = position.get("stop_loss", 0)
+            target = position.get("target", 0)
+            
+            # Check stop loss
+            if current_price <= stop_loss:
+                return {
+                    "should_exit": True,
+                    "reason": "Stop loss triggered",
+                    "exit_price": current_price,
+                    "pnl": (current_price - entry_price) * position.get("shares", 0)
+                }
+            
+            # Check target (take partial profit at 20%, full exit if drops back)
+            if current_price >= target:
+                return {
+                    "should_exit": True,
+                    "reason": "Target reached",
+                    "exit_price": current_price,
+                    "pnl": (current_price - entry_price) * position.get("shares", 0)
+                }
+            
+            # Check if fundamentals deteriorated (simplified - could be enhanced)
+            evaluation = self.analyzer.evaluate_stock(ticker)
+            if "error" not in evaluation:
+                criteria_passed = evaluation.get("passed", 0)
+                criteria_total = evaluation.get("total", 1)
+                current_score = (criteria_passed / criteria_total) * 100 if criteria_total > 0 else 0
+                original_score = position.get("score", 80)
+                
+                if current_score < original_score * 0.7:  # Score dropped 30%+
+                    return {
+                        "should_exit": True,
+                        "reason": "Fundamentals deteriorated",
+                        "exit_price": current_price,
+                        "pnl": (current_price - entry_price) * position.get("shares", 0)
+                    }
+            
+        except Exception as e:
+            return {"should_exit": False, "error": str(e)}
+        
+        return {"should_exit": False}
+    
+    def execute_sell(self, portfolio: Dict, ticker: str, exit_info: Dict) -> Dict:
+        """Execute a sell order"""
+        from datetime import datetime
+        
+        position = portfolio.get("positions", {}).get(ticker)
+        if not position:
+            return {"success": False, "error": "Position not found"}
+        
+        exit_price = exit_info.get("exit_price", 0)
+        shares = position.get("shares", 0)
+        proceeds = exit_price * shares
+        
+        # Remove position
+        del portfolio["positions"][ticker]
+        portfolio["current_cash"] += proceeds
+        
+        # Add to trade history
+        entry_price = position.get("entry_price", 0)
+        pnl = exit_info.get("pnl", (exit_price - entry_price) * shares)
+        
+        trade = {
+            "ticker": ticker,
+            "action": "SELL",
+            "shares": shares,
+            "price": exit_price,
+            "proceeds": proceeds,
+            "pnl": pnl,
+            "reason": exit_info.get("reason", "Manual exit"),
+            "timestamp": datetime.now().isoformat()
+        }
+        portfolio["trade_history"].append(trade)
+        
+        return {"success": True, "proceeds": proceeds, "pnl": pnl}
+    
+    def auto_manage_portfolio(self, portfolio: Dict, available_stocks: List[str] = None) -> Dict:
+        """
+        Automatically manage portfolio: check exits, add contributions, evaluate new entries
+        """
+        from datetime import datetime
+        
+        # Add monthly contribution
+        portfolio = self.add_monthly_contribution(portfolio)
+        
+        # Check exit conditions for existing positions
+        positions_to_exit = []
+        for ticker in list(portfolio.get("positions", {}).keys()):
+            exit_check = self.check_exit_conditions(portfolio, ticker)
+            if exit_check.get("should_exit", False):
+                positions_to_exit.append((ticker, exit_check))
+        
+        # Execute exits
+        for ticker, exit_info in positions_to_exit:
+            self.execute_sell(portfolio, ticker, exit_info)
+        
+        # Evaluate new opportunities if we have cash and available stocks
+        if available_stocks and portfolio.get("current_cash", 0) > 10:
+            for ticker in available_stocks[:5]:  # Check top 5 opportunities
+                if ticker in portfolio.get("positions", {}):
+                    continue
+                
+                eval_result = self.evaluate_trade_opportunity(portfolio, ticker)
+                if eval_result.get("should_trade", False):
+                    buy_result = self.execute_buy(portfolio, ticker, eval_result)
+                    if buy_result.get("success", False):
+                        break  # Only enter one position at a time
+        
+        portfolio["last_managed"] = datetime.now().isoformat()
+        return portfolio

@@ -216,7 +216,7 @@ st.divider()
 # Quick actions
 st.subheader("⚡ Quick Actions")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
     if st.button("📈 Analyze Stocks", use_container_width=True):
@@ -233,6 +233,10 @@ with col3:
 with col4:
     if st.button("🔥 Trade Desk", use_container_width=True):
         st.switch_page("pages/04_Trade_Desk.py")
+
+with col5:
+    if st.button("🤖 AI Portfolio", use_container_width=True):
+        st.switch_page("pages/05_AI_Portfolio.py")
 
 st.divider()
 st.caption("⚠️ Disclaimer: Educational purposes only. Not financial advice.")
