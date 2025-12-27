@@ -10,6 +10,7 @@ Handles persistence of scan results and trade history
 
 import json
 import os
+import yaml
 from datetime import datetime
 from pathlib import Path
 
@@ -124,6 +125,16 @@ class StorageManager:
                 json.dump(data, f, indent=2)
         except Exception as e:
             print(f"Error saving {filepath}: {e}")
+    
+    def load_config(self):
+        """Load config.yaml file"""
+        config_path = Path(__file__).parent.parent / "config.yaml"
+        try:
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            return {}
     
     def merge_and_dedupe(self, new_stocks, existing_stocks):
         """

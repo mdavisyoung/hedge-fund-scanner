@@ -105,9 +105,22 @@ with st.sidebar:
                 else:
                     scan_day = today
                 
-                # Get stock list (with market filtering)
-                from scanner.stock_universe import get_daily_batch
-                tickers = get_daily_batch(scan_day, filter_weak_markets=True, min_market_cap=50_000_000)
+                # Get settings from config
+                config = storage.load_config()
+                market_filter_settings = config.get('scanner', {}).get('market_filtering', {})
+                universe_settings = config.get('scanner', {}).get('universe', {})
+                min_market_cap = market_filter_settings.get('min_market_cap', 50_000_000)
+                min_volume = market_filter_settings.get('min_volume', 100_000)
+                use_dynamic = universe_settings.get('use_dynamic_fetch', False)
+                
+                # Get stock list (with market filtering and dynamic fetch if enabled)
+                tickers = get_daily_batch(
+                    scan_day, 
+                    filter_weak_markets=True, 
+                    min_market_cap=min_market_cap,
+                    use_dynamic=use_dynamic,
+                    min_volume=min_volume
+                )
                 day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
                 
                 st.info(f"📊 **Scanning {len(tickers)} stocks from {day_names[scan_day]}'s batch**")

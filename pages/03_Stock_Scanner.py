@@ -70,8 +70,23 @@ with st.sidebar:
 
 # Main content
 if run_scan:
+    # Load config to check if dynamic fetch is enabled
+    from utils.storage import StorageManager
+    storage = StorageManager()
+    config = storage.load_config()
+    use_dynamic = config.get('scanner', {}).get('universe', {}).get('use_dynamic_fetch', False)
+    market_filter_settings = config.get('scanner', {}).get('market_filtering', {})
+    min_market_cap = market_filter_settings.get('min_market_cap', 50_000_000)
+    min_volume = market_filter_settings.get('min_volume', 100_000)
+    
     # Get stocks for selected day
-    stocks_to_scan = get_daily_batch(day_of_week)
+    stocks_to_scan = get_daily_batch(
+        day_of_week,
+        filter_weak_markets=True,
+        min_market_cap=min_market_cap,
+        use_dynamic=use_dynamic,
+        min_volume=min_volume
+    )
     
     if not stocks_to_scan:
         st.warning(f"No stocks scheduled for {selected_day}. Try a different day.")

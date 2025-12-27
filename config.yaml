@@ -7,6 +7,12 @@ scanner:
   # Parallel workers for scanning
   max_workers: 10
   
+  # Stock universe source
+  universe:
+    use_dynamic_fetch: true  # If true, fetch all tickers from exchanges dynamically
+                             # If false, use hardcoded list (~210 stocks)
+    cache_days: 7            # Days to cache exchange ticker list
+  
   # Market filtering - removes weak markets (OTC, pink sheets)
   market_filtering:
     enabled: true

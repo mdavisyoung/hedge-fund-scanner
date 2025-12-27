@@ -47,8 +47,20 @@ class MarketScanner:
         
         print(f"📅 Scanning batch for day {day_of_week}...")
         
+        # Load config to check if dynamic fetch is enabled
+        from utils.storage import StorageManager
+        storage = StorageManager()
+        config = storage.load_config()
+        use_dynamic = config.get('scanner', {}).get('universe', {}).get('use_dynamic_fetch', False)
+        
         # Get stock list (already filtered by get_daily_batch if enabled)
-        tickers = get_daily_batch(day_of_week, filter_weak_markets=True, min_market_cap=min_market_cap)
+        tickers = get_daily_batch(
+            day_of_week, 
+            filter_weak_markets=True, 
+            min_market_cap=min_market_cap,
+            use_dynamic=use_dynamic,
+            min_volume=min_volume
+        )
         print(f"📊 Processing {len(tickers)} stocks (after market filtering)...")
         print(f"   Filters: Market cap >= ${min_market_cap:,}, Strong exchange, Volume >= {min_volume:,}")
         
