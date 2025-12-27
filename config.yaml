@@ -7,6 +7,13 @@ scanner:
   # Parallel workers for scanning
   max_workers: 10
   
+  # Market filtering - removes weak markets (OTC, pink sheets)
+  market_filtering:
+    enabled: true
+    min_market_cap: 50000000  # $50M minimum market cap
+    min_volume: 100000        # 100k average daily volume (0 to disable)
+    strict_mode: false         # If true, use $100M market cap instead
+  
   # Scoring thresholds
   thresholds:
     hot: 80      # Score >= 80

@@ -105,12 +105,13 @@ with st.sidebar:
                 else:
                     scan_day = today
                 
-                # Get stock list
-                tickers = get_daily_batch(scan_day)
+                # Get stock list (with market filtering)
+                from scanner.stock_universe import get_daily_batch
+                tickers = get_daily_batch(scan_day, filter_weak_markets=True, min_market_cap=50_000_000)
                 day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
                 
                 st.info(f"📊 **Scanning {len(tickers)} stocks from {day_names[scan_day]}'s batch**")
-                st.caption("💡 **How it works:** Uses a hardcoded list of ~200+ S&P 500 stocks organized by sector. Pulls live data from Yahoo Finance API (yfinance) for each stock.")
+                st.caption("💡 **How it works:** Filters to strong markets only (NYSE/NASDAQ/AMEX), minimum $50M market cap, 100k+ volume. Pulls live data from Yahoo Finance API (yfinance) for each stock.")
                 
                 # Progress tracking
                 progress_bar = st.progress(0)
@@ -127,13 +128,15 @@ with st.sidebar:
                     'total_scanned': len(tickers)
                 }
                 
-                # Scan with progress updates
+                # Scan with progress updates (with market filtering)
+                min_market_cap = 50_000_000  # $50M minimum
+                min_volume = 100_000  # 100k average volume
                 completed = 0
                 current_stocks = []
                 
                 with ThreadPoolExecutor(max_workers=10) as executor:
                     future_to_ticker = {
-                        executor.submit(scanner._scan_single_stock, ticker): ticker 
+                        executor.submit(scanner._scan_single_stock, ticker, min_market_cap, min_volume): ticker 
                         for ticker in tickers
                     }
                     

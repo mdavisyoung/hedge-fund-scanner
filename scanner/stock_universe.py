@@ -58,12 +58,78 @@ SMALL_MID_CAPS = [
 ]
 
 
-def get_daily_batch(day_of_week):
+def filter_strong_markets(tickers, min_market_cap=50_000_000, min_volume=100_000):
     """
-    Returns stock list for given day (0=Monday, 5=Saturday)
+    Pre-filter tickers to only include strong markets
+    Applies market cap filter first (fast), then exchange check
+    
+    Args:
+        tickers: List of ticker symbols
+        min_market_cap: Minimum market cap in dollars (default $50M)
+        min_volume: Minimum average daily volume (default 100k, 0 to disable)
+    
+    Returns:
+        Filtered list of ticker symbols
+    """
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from utils import StockAnalyzer
+    
+    analyzer = StockAnalyzer()
+    filtered_tickers = []
+    skipped_low_cap = 0
+    skipped_weak_market = 0
+    skipped_low_volume = 0
+    
+    print(f"🔍 Filtering {len(tickers)} tickers to strong markets only...")
+    print(f"   Criteria: Market cap >= ${min_market_cap:,}, Strong exchange, Volume >= {min_volume:,}")
+    
+    for ticker in tickers:
+        try:
+            fundamentals = analyzer.get_fundamentals(ticker)
+            
+            if not fundamentals:
+                continue
+            
+            # Primary filter: Market cap
+            market_cap = fundamentals.get('market_cap', 0)
+            if market_cap < min_market_cap:
+                skipped_low_cap += 1
+                continue
+            
+            # Secondary filter: Strong market
+            if not fundamentals.get('is_strong_market', False):
+                skipped_weak_market += 1
+                continue
+            
+            # Optional filter: Volume
+            if min_volume > 0:
+                avg_volume = fundamentals.get('average_volume', 0)
+                if avg_volume < min_volume:
+                    skipped_low_volume += 1
+                    continue
+            
+            filtered_tickers.append(ticker)
+            
+        except Exception as e:
+            continue  # Skip if can't determine
+    
+    print(f"✅ Filtered to {len(filtered_tickers)} strong market stocks")
+    print(f"   Skipped: {skipped_low_cap} low market cap, {skipped_weak_market} weak market, {skipped_low_volume} low volume")
+    
+    return filtered_tickers
+
+
+def get_daily_batch(day_of_week, filter_weak_markets=True, min_market_cap=50_000_000):
+    """
+    Returns stock list for given day
+    Optionally filters out weak markets (OTC, pink sheets)
     
     Args:
         day_of_week: 0-6 (0=Monday, 6=Sunday)
+        filter_weak_markets: If True, apply market filtering
+        min_market_cap: Minimum market cap for filtering (default $50M)
         
     Returns:
         List of ticker symbols
@@ -78,7 +144,13 @@ def get_daily_batch(day_of_week):
         6: []   # Sunday: No scan
     }
     
-    return batches.get(day_of_week, [])
+    tickers = batches.get(day_of_week, [])
+    
+    # Apply market filtering if requested
+    if filter_weak_markets and tickers:
+        tickers = filter_strong_markets(tickers, min_market_cap=min_market_cap)
+    
+    return tickers
 
 
 def get_stock_universe_summary():

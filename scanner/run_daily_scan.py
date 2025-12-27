@@ -70,8 +70,8 @@ def main():
     else:  # Monday-Friday - full batch scan
         print(f"\n📅 Weekday scan (Day {today})...")
         
-        # Scan today's batch
-        results = scanner.scan_daily_batch(today)
+        # Scan today's batch with market filtering
+        results = scanner.scan_daily_batch(today, min_market_cap=50_000_000, min_volume=100_000)
         
         # Re-scan yesterday's warming stocks (priority)
         print("\n🔄 Checking yesterday's warming stocks...")

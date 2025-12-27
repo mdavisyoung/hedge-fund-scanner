@@ -23,12 +23,36 @@ class StockAnalyzer:
             stock = yf.Ticker(ticker)
             info = stock.info
             
+            # Get exchange information
+            exchange = (info.get("exchange", "") or "").upper()
+            quote_type = (info.get("quoteType", "") or "").upper()
+            market = (info.get("market", "") or "").upper()
+            market_cap = info.get("marketCap") or info.get("market_cap", 0)
+            avg_volume = info.get("averageVolume") or info.get("average_volume", 0)
+            
+            # Determine if it's a strong market
+            strong_exchanges = ["NYQ", "NYS", "NMS", "NCM", "NGM", "ASE"]  # NYSE, NASDAQ, AMEX
+            weak_markets = ["OTC", "OTCQB", "OTCQX", "PINK", "GREY"]
+            
+            is_strong_market = (
+                exchange in strong_exchanges or
+                (quote_type == "EQUITY" and 
+                 not any(weak in exchange for weak in weak_markets) and
+                 "PINK" not in exchange and
+                 exchange != "")
+            )
+            
             return {
                 "ticker": ticker,
                 "name": info.get("shortName", ticker),
+                "exchange": exchange,
+                "quote_type": quote_type,
+                "market": market,
+                "market_cap": market_cap,
+                "average_volume": avg_volume,
+                "is_strong_market": is_strong_market,
                 "sector": info.get("sector", "Unknown"),
                 "industry": info.get("industry", "Unknown"),
-                "market_cap": info.get("marketCap", 0),
                 "pe_ratio": info.get("trailingPE", 0),
                 "forward_pe": info.get("forwardPE", 0),
                 "price_to_book": info.get("priceToBook", 0),
@@ -46,7 +70,7 @@ class StockAnalyzer:
                 "fifty_two_week_low": info.get("fiftyTwoWeekLow", 0),
             }
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error fetching {ticker}: {e}")
             return {}
     
     def classify_stock_type(self, fundamentals: Dict) -> str:
