@@ -84,6 +84,40 @@ with st.sidebar:
         # Actions
         st.subheader("Actions")
         
+        # Check if we have hot stocks
+        hot_data = storage.load_hot_stocks()
+        hot_count = len(hot_data.get('stocks', []))
+        
+        if hot_count == 0:
+            st.warning(f"⚠️ No hot stocks available. Run scanner first!")
+            if st.button("🔍 Run Stock Scanner", use_container_width=True, type="primary"):
+                with st.spinner("Running stock scanner... This may take a few minutes..."):
+                    from scanner.market_scanner import MarketScanner
+                    from datetime import datetime
+                    
+                    scanner = MarketScanner(max_workers=10)
+                    today = datetime.now().weekday()
+                    
+                    # Run scan for today's batch
+                    results = scanner.scan_daily_batch(today)
+                    
+                    # Save results
+                    storage.save_hot_stocks(results['hot'])
+                    storage.save_warming_stocks(results['warming'])
+                    storage.save_watching_stocks(results['watching'])
+                    
+                    # Update progress
+                    progress = storage.load_scan_progress()
+                    progress['last_scan'] = datetime.now().isoformat()
+                    storage.save_scan_progress(progress)
+                    
+                    st.success(f"✅ Scanner complete! Found {len(results['hot'])} hot stocks, {len(results['warming'])} warming, {len(results['watching'])} watching")
+                    st.rerun()
+        else:
+            st.success(f"✅ {hot_count} hot stocks available from scanner")
+        
+        st.divider()
+        
         if st.button("🔄 Auto-Manage Portfolio", use_container_width=True, type="primary"):
             with st.spinner("Managing portfolio..."):
                 # Get hot stocks from scanner
