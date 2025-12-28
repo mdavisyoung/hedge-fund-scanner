@@ -77,6 +77,64 @@ class AutonomousTrader:
         # Initialize notifications
         self.notifier = NotificationManager()
 
+        # Trading state tracking
+        self.trading_paused = False
+        self.pause_reason = None
+        self.ai_call_count_today = 0
+
+    def is_market_open(self) -> bool:
+        """Check if US stock market is currently open"""
+        try:
+            import pytz
+        except ImportError:
+            # Fallback if pytz not installed
+            print("Warning: pytz not installed, using basic time check")
+            now = datetime.now()
+            if now.weekday() >= 5:  # Weekend
+                return False
+            return 9 <= now.hour < 16
+
+        et_tz = pytz.timezone('America/New_York')
+        now_et = datetime.now(et_tz)
+
+        # Market closed on weekends
+        if now_et.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            return False
+
+        # Market hours: 9:30 AM - 4:00 PM ET
+        market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+        market_close = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+
+        return market_open <= now_et <= market_close
+
+    def check_daily_loss_limit(self) -> bool:
+        """
+        Check if daily loss limit has been reached.
+        Returns True if limit reached (should pause trading)
+        """
+        # Get today's closed trades
+        today = datetime.now().date()
+        today_trades = [
+            t for t in self.trade_history
+            if t.get('status') == 'CLOSED' and
+               datetime.fromisoformat(t.get('exit_timestamp', '2000-01-01')).date() == today
+        ]
+
+        if not today_trades:
+            return False
+
+        # Calculate total P/L for today
+        daily_pnl_pct = sum(t.get('pnl_pct', 0) for t in today_trades)
+
+        # If lost more than 2% today, pause trading
+        if daily_pnl_pct <= -2.0:
+            self.trading_paused = True
+            self.pause_reason = f"Daily loss limit reached: {daily_pnl_pct:.2f}%"
+            print(f"🛑 {self.pause_reason}")
+            return True
+
+        return False
+
     def get_account_info(self) -> Dict:
         """Get current account status"""
         account = self.trading_client.get_account()
@@ -233,8 +291,12 @@ Format your response as JSON:
                 content = response.json()["choices"][0]["message"]["content"]
                 # Try to parse JSON from response
                 analysis = json.loads(content)
+                # Increment AI call counter
+                self.ai_call_count_today += 1
                 return analysis
             else:
+                # Still count failed API calls
+                self.ai_call_count_today += 1
                 return {
                     'confidence': 5,
                     'reasoning': f'API error: {response.status_code}',
@@ -243,6 +305,8 @@ Format your response as JSON:
 
         except Exception as e:
             print(f"Error analyzing {ticker}: {e}")
+            # Count API call even if it failed
+            self.ai_call_count_today += 1
             return {
                 'confidence': 5,
                 'reasoning': f'Analysis error: {str(e)}',
