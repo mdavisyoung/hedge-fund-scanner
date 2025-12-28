@@ -1,4 +1,3 @@
-import yfinance as yf
 import pandas as pd
 import requests
 import os
@@ -9,255 +8,174 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Import Polygon fetcher and rate limiter
+# Import Polygon fetcher
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 from polygon_fetcher import PolygonFetcher
-from rate_limiter import get_yahoo_rate_limiter
 
 class StockAnalyzer:
     def __init__(self, use_polygon: bool = True):
         self.cache = {}
         self.use_polygon = use_polygon
         self.polygon = PolygonFetcher() if use_polygon else None
-        self.yahoo_limiter = get_yahoo_rate_limiter()
-
-    def bulk_download_yahoo(self, tickers: List[str], period: str = "1mo") -> Dict[str, pd.DataFrame]:
-        """
-        Download multiple tickers at once using yf.download()
-        This is more efficient than individual Ticker() calls
-
-        Args:
-            tickers: List of stock symbols
-            period: Time period (1mo, 3mo, 6mo, 1y, etc.)
-
-        Returns:
-            Dict mapping ticker -> DataFrame
-        """
-        if not tickers:
-            return {}
-
-        try:
-            # Rate limit even bulk downloads
-            self.yahoo_limiter.wait_if_needed()
-
-            print(f"[Yahoo Bulk] Downloading {len(tickers)} tickers...")
-
-            # Download all at once
-            data = yf.download(
-                tickers,
-                period=period,
-                group_by='ticker',
-                auto_adjust=True,
-                threads=True,
-                progress=False
-            )
-
-            # Parse results into dict
-            result = {}
-            if len(tickers) == 1:
-                # Single ticker returns different structure
-                result[tickers[0]] = data
-            else:
-                for ticker in tickers:
-                    try:
-                        ticker_data = data[ticker]
-                        if not ticker_data.empty:
-                            result[ticker] = ticker_data
-                    except:
-                        pass
-
-            print(f"[Yahoo Bulk] Successfully downloaded {len(result)}/{len(tickers)} tickers")
-            return result
-
-        except Exception as e:
-            print(f"[Yahoo Bulk] Error: {e}")
-            return {}
-
+        
     def get_stock_data(self, ticker: str, period: str = "1y") -> Optional[pd.DataFrame]:
         """
-        Get historical stock data
-        Primary: Polygon (if enabled)
-        Fallback: Yahoo Finance
+        Get historical stock data using ONLY Polygon API
         """
-        # Try Polygon first if enabled
-        if self.use_polygon and self.polygon:
-            try:
-                # Convert period to days
-                days_map = {
-                    "1mo": 30, "3mo": 90, "6mo": 180,
-                    "1y": 365, "2y": 730, "5y": 1825, "max": 3650
-                }
-                days = days_map.get(period, 365)
-
-                history = self.polygon.get_price_history(ticker, days=days)
-                if history and history.get('bars'):
-                    # Convert to DataFrame
-                    bars = history['bars']
-                    df = pd.DataFrame(bars)
-                    df['Date'] = pd.to_datetime(df['timestamp'], unit='ms')
-                    df.set_index('Date', inplace=True)
-                    df = df.rename(columns={
-                        'open': 'Open',
-                        'high': 'High',
-                        'low': 'Low',
-                        'close': 'Close',
-                        'volume': 'Volume'
-                    })
-                    return df[['Open', 'High', 'Low', 'Close', 'Volume']]
-            except Exception as e:
-                print(f"Polygon error for {ticker}, falling back to Yahoo: {e}")
-
-        # Fallback to Yahoo Finance (with rate limiting)
-        try:
-            self.yahoo_limiter.wait_if_needed()
-            stock = yf.Ticker(ticker)
-            df = stock.history(period=period)
-            return df
-        except Exception as e:
-            print(f"Error fetching {ticker}: {e}")
+        if not self.use_polygon or not self.polygon:
+            print(f"[Error] Polygon API not configured")
             return None
+            
+        try:
+            # Convert period to days
+            days_map = {
+                "1mo": 30, "3mo": 90, "6mo": 180,
+                "1y": 365, "2y": 730, "5y": 1825, "max": 3650
+            }
+            days = days_map.get(period, 365)
 
+            history = self.polygon.get_price_history(ticker, days=days)
+            if history and history.get('bars'):
+                # Convert to DataFrame
+                bars = history['bars']
+                df = pd.DataFrame(bars)
+                df['Date'] = pd.to_datetime(df['timestamp'], unit='ms')
+                df.set_index('Date', inplace=True)
+                df = df.rename(columns={
+                    'open': 'Open',
+                    'high': 'High',
+                    'low': 'Low',
+                    'close': 'Close',
+                    'volume': 'Volume'
+                })
+                print(f"[Polygon History] {ticker}: Loaded {len(bars)} bars for period {period}")
+                return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+            else:
+                print(f"[Warning] No price history found for {ticker}")
+                return None
+        except Exception as e:
+            print(f"[Error] Polygon history fetch failed for {ticker}: {e}")
+            return None
+            
     def get_fundamentals(self, ticker: str) -> Dict:
         """
-        Get stock fundamentals
-        Primary: Polygon (for price/market data) + Yahoo (for ratios)
-        Fallback: Yahoo Finance only
+        Get stock fundamentals using ONLY Polygon API
+        Cleaner, faster, more reliable - no more Yahoo Finance!
+        
+        Args:
+            ticker: Stock ticker symbol
+            
+        Returns:
+            Dict containing all fundamental metrics
         """
-        # Initialize with defaults
-        current_price = 0
-        market_cap = 0
-        avg_volume = 0
-        exchange = ""
-        name = ticker
-        polygon_data_used = False
-
-        # Try Polygon first for basic data (more reliable)
-        if self.use_polygon and self.polygon:
-            try:
-                quote = self.polygon.get_stock_quote(ticker)
-                details = self.polygon.get_stock_details(ticker)
-
-                if quote and details:
-                    current_price = quote['current_price']
-                    market_cap = details['market_cap']
-                    avg_volume = quote['volume']
-                    exchange = details['primary_exchange']
-                    name = details.get('name', ticker)
-                    polygon_data_used = True
-                    print(f"[Polygon] {ticker}: ${current_price:.2f}")
-            except Exception as e:
-                print(f"Polygon fundamental fetch failed for {ticker}: {e}")
-
-        # Try Yahoo for detailed ratios (PE, ROE, etc.) with retry and rate limiting
-        max_retries = 3
-        info = {}
-
-        for attempt in range(max_retries):
-            try:
-                # Wait for rate limiter before each attempt
-                wait_info = self.yahoo_limiter.wait_if_needed()
-                if wait_info['total_wait'] > 0:
-                    print(f"[Rate Limit] Waited {wait_info['total_wait']:.1f}s for {ticker}")
-
-                stock = yf.Ticker(ticker)
-                info = stock.info
-
-                # If we got data, break
-                if info and len(info) > 3:  # Yahoo always returns at least 3 keys even on error
-                    break
-
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    # Exponential backoff: 2s, 4s, 8s
-                    backoff_delay = 2 ** (attempt + 1)
-                    print(f"Yahoo attempt {attempt + 1} failed for {ticker}, retrying in {backoff_delay}s...")
-                    import time
-                    time.sleep(backoff_delay)
-                else:
-                    print(f"Yahoo Finance failed for {ticker} after {max_retries} attempts: {e}")
-
-        # Use Yahoo data if Polygon failed
-        if not polygon_data_used and info:
-            exchange = (info.get("exchange", "") or "").upper()
-            market_cap = info.get("marketCap") or info.get("market_cap", 0)
-            avg_volume = info.get("averageVolume") or info.get("average_volume", 0)
-            current_price = info.get("currentPrice", 0)
-            name = info.get("shortName", ticker)
-
-        # Get exchange information
-        quote_type = (info.get("quoteType", "") or "").upper() if info else "EQUITY"
-        market = (info.get("market", "") or "").upper() if info else ""
-
-        # Determine if it's a strong market
-        strong_exchanges = ["NYQ", "NYS", "NMS", "NCM", "NGM", "ASE", "XNAS", "XNYS"]  # NYSE, NASDAQ, AMEX
-        weak_markets = ["OTC", "OTCQB", "OTCQX", "PINK", "GREY"]
-
-        is_strong_market = (
-            exchange in strong_exchanges or
-            (quote_type == "EQUITY" and
-             not any(weak in exchange for weak in weak_markets) and
-             "PINK" not in exchange and
-             exchange != "")
-        )
-
-        # Build result dict - use Polygon data if available, Yahoo otherwise
+        # Initialize result with defaults
         result = {
             "ticker": ticker,
-            "name": name,
-            "exchange": exchange,
-            "quote_type": quote_type,
-            "market": market,
-            "market_cap": market_cap,
-            "average_volume": avg_volume,
-            "is_strong_market": is_strong_market,
-            "current_price": current_price,  # Polygon price if available
+            "name": ticker,
+            "exchange": "",
+            "quote_type": "EQUITY",
+            "market": "",
+            "market_cap": 0,
+            "average_volume": 0,
+            "is_strong_market": False,
+            "current_price": 0,
+            "sector": "Unknown",
+            "industry": "Unknown",
+            "pe_ratio": 0,
+            "forward_pe": 0,
+            "price_to_book": 0,
+            "debt_to_equity": 0,
+            "roe": 0,
+            "current_ratio": 0,
+            "quick_ratio": 0,
+            "revenue_growth": 0,
+            "earnings_growth": 0,
+            "profit_margin": 0,
+            "dividend_yield": 0,
+            "beta": 1.0,
+            "fifty_two_week_high": 0,
+            "fifty_two_week_low": 0,
         }
 
-        # Add Yahoo fundamentals if available
-        if info and len(info) > 3:
-            result.update({
-                "sector": info.get("sector", "Unknown"),
-                "industry": info.get("industry", "Unknown"),
-                "pe_ratio": info.get("trailingPE", 0),
-                "forward_pe": info.get("forwardPE", 0),
-                "price_to_book": info.get("priceToBook", 0),
-                "debt_to_equity": info.get("debtToEquity", 0),
-                "roe": info.get("returnOnEquity", 0) * 100 if info.get("returnOnEquity") else 0,
-                "current_ratio": info.get("currentRatio", 0),
-                "quick_ratio": info.get("quickRatio", 0),
-                "revenue_growth": info.get("revenueGrowth", 0) * 100 if info.get("revenueGrowth") else 0,
-                "earnings_growth": info.get("earningsGrowth", 0) * 100 if info.get("earningsGrowth") else 0,
-                "profit_margin": info.get("profitMargins", 0) * 100 if info.get("profitMargins") else 0,
-                "dividend_yield": info.get("dividendYield", 0) * 100 if info.get("dividendYield") else 0,
-                "beta": info.get("beta", 1.0),
-                "fifty_two_week_high": info.get("fiftyTwoWeekHigh", 0),
-                "fifty_two_week_low": info.get("fiftyTwoWeekLow", 0),
-            })
-        else:
-            # Yahoo failed but we have Polygon data - use defaults for ratios
-            print(f"[Warning] Using Polygon-only data for {ticker} (Yahoo unavailable)")
-            result.update({
-                "sector": "Unknown",
-                "industry": "Unknown",
-                "pe_ratio": 0,
-                "forward_pe": 0,
-                "price_to_book": 0,
-                "debt_to_equity": 0,
-                "roe": 0,
-                "current_ratio": 0,
-                "quick_ratio": 0,
-                "revenue_growth": 0,
-                "earnings_growth": 0,
-                "profit_margin": 0,
-                "dividend_yield": 0,
-                "beta": 1.0,
-                "fifty_two_week_high": 0,
-                "fifty_two_week_low": 0,
-            })
+        if not self.use_polygon or not self.polygon:
+            print(f"[Error] Polygon API not configured for {ticker}")
+            return result
+
+        try:
+            # Step 1: Get current quote (price, volume)
+            quote = self.polygon.get_stock_quote(ticker)
+            if quote:
+                result['current_price'] = quote['current_price']
+                result['average_volume'] = quote['volume']
+                print(f"[Polygon Quote] {ticker}: ${quote['current_price']:.2f}")
+            else:
+                print(f"[Warning] Could not get quote for {ticker}")
+                return result  # Can't proceed without price
+
+            # Step 2: Get company details (market cap, exchange, name)
+            details = self.polygon.get_stock_details(ticker)
+            if details:
+                result['market_cap'] = details['market_cap']
+                result['exchange'] = details['primary_exchange']
+                result['name'] = details.get('name', ticker)
+                result['quote_type'] = details.get('type', 'EQUITY')
+                result['market'] = details.get('market', 'stocks')
+                
+                # Determine if strong market
+                strong_exchanges = ["NYQ", "NYS", "NMS", "NCM", "NGM", "ASE", "XNAS", "XNYS"]
+                weak_markets = ["OTC", "OTCQB", "OTCQX", "PINK", "GREY"]
+                
+                result['is_strong_market'] = (
+                    details['primary_exchange'] in strong_exchanges and
+                    not any(weak in details['primary_exchange'] for weak in weak_markets)
+                )
+                
+                print(f"[Polygon Details] {ticker}: {result['name']}, Market Cap ${details['market_cap']/1e9:.2f}B")
+            else:
+                print(f"[Warning] Could not get details for {ticker}")
+
+            # Step 3: Get financial ratios (P/E, Current Ratio, ROE, etc.)
+            financials = self.polygon.get_financials(ticker)
+            if financials:
+                result.update({
+                    'pe_ratio': financials.get('pe_ratio', 0),
+                    'price_to_book': financials.get('price_to_book', 0),
+                    'debt_to_equity': financials.get('debt_to_equity', 0),
+                    'roe': financials.get('roe', 0),
+                    'current_ratio': financials.get('current_ratio', 0),
+                    'quick_ratio': financials.get('quick_ratio', 0),
+                    'revenue_growth': financials.get('revenue_growth', 0),
+                    'earnings_growth': financials.get('earnings_growth', 0),
+                    'profit_margin': financials.get('profit_margin', 0),
+                    'beta': financials.get('beta', 1.0),
+                    'dividend_yield': financials.get('dividend_yield', 0),
+                    'forward_pe': financials.get('forward_pe', 0),
+                })
+                print(f"[Polygon Financials] {ticker}: P/E={financials.get('pe_ratio', 0):.2f}, Current Ratio={financials.get('current_ratio', 0):.2f}, ROE={financials.get('roe', 0):.2f}%")
+            else:
+                print(f"[Warning] Could not get financials for {ticker} - using defaults")
+
+            # Step 4: Get 52-week high/low from price history
+            try:
+                history = self.polygon.get_price_history(ticker, days=365)
+                if history and history.get('bars'):
+                    closes = [bar['close'] for bar in history['bars']]
+                    if closes:
+                        result['fifty_two_week_high'] = max(closes)
+                        result['fifty_two_week_low'] = min(closes)
+                        print(f"[Polygon History] {ticker}: 52W High=${result['fifty_two_week_high']:.2f}, Low=${result['fifty_two_week_low']:.2f}")
+            except Exception as e:
+                print(f"[Warning] Could not get price history for {ticker}: {e}")
+
+        except Exception as e:
+            print(f"[Error] Polygon data fetch failed for {ticker}: {e}")
+            import traceback
+            traceback.print_exc()
 
         return result
+
     
     def classify_stock_type(self, fundamentals: Dict) -> str:
         sector = fundamentals.get("sector", "").lower()
