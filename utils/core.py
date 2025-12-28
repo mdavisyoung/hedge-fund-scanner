@@ -379,7 +379,11 @@ Use clear numbers, proper calculations, and simple language. Format with markdow
     
     def generate_strategy(self, stock_data: Dict, user_prefs: Dict) -> str:
         if not self.api_key:
-            return "⚠️ XAI API key not configured. Add to .env file."
+            return "⚠️ XAI API key not configured. Add XAI_API_KEY to .env file."
+        
+        # Verify API key format (should start with xai- and be reasonable length)
+        if not self.api_key.startswith("xai-") or len(self.api_key) < 50:
+            return f"⚠️ Invalid API key format. Key should start with 'xai-' and be longer. Current key length: {len(self.api_key)}"
         
         # Extract data from evaluation object structure
         fundamentals = stock_data.get('fundamentals', {})

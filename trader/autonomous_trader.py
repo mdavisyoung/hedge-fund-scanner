@@ -42,7 +42,9 @@ class AutonomousTrader:
         # Load API keys
         alpaca_key = os.getenv('ALPACA_API_KEY')
         alpaca_secret = os.getenv('ALPACA_SECRET_KEY')
-        self.xai_key = os.getenv('XAI_API_KEY')
+        # Clean API key (remove whitespace, newlines, quotes)
+        api_key_raw = os.getenv('XAI_API_KEY', '').strip()
+        self.xai_key = api_key_raw.replace("\n", "").replace("\r", "").replace('"', "").replace("'", "").strip()
 
         if not alpaca_key or not alpaca_secret:
             raise ValueError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env file")
