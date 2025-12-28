@@ -242,20 +242,23 @@ with col1:
         st.switch_page("pages/01_Stock_Analyzer.py")
 
 with col2:
-    if st.button("🎲 Simulate Portfolio", use_container_width=True):
-        st.switch_page("pages/02_Portfolio_Simulator.py")
+    if st.button("🚀 Auto Trading Hub", use_container_width=True, type="primary"):
+        st.switch_page("pages/02_Auto_Trading_Hub.py")
 
 with col3:
     if st.button("🔍 Stock Scanner", use_container_width=True):
-        st.switch_page("pages/03_Stock_Scanner.py")
+        st.switch_page("pages/02_Auto_Trading_Hub.py")
+        st.session_state['active_tab'] = 'Scanner'
 
 with col4:
-    if st.button("🔥 Trade Desk", use_container_width=True):
-        st.switch_page("pages/04_Trade_Desk.py")
+    if st.button("🤖 Auto Trader", use_container_width=True):
+        st.switch_page("pages/02_Auto_Trading_Hub.py")
+        st.session_state['active_tab'] = 'Auto Trading'
 
 with col5:
-    if st.button("🤖 AI Portfolio", use_container_width=True):
-        st.switch_page("pages/06_AI_Portfolio.py")
+    if st.button("📋 Copy Trades", use_container_width=True):
+        st.switch_page("pages/02_Auto_Trading_Hub.py")
+        st.session_state['active_tab'] = 'Copy Trades'
 
 st.divider()
 st.caption("⚠️ Disclaimer: Educational purposes only. Not financial advice.")
