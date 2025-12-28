@@ -216,10 +216,14 @@ if analyze_button and ticker:
             st.subheader("🤖 AI-Generated Strategy")
             
             with st.spinner("Generating strategy with xAI Grok..."):
+                # Calculate portfolio value (can be enhanced to use actual portfolio value later)
+                portfolio_value = monthly_contribution * 12  # Default: 12 months of contributions
+                
                 user_prefs = {
                     "monthly_contribution": monthly_contribution,
                     "risk_tolerance": risk_tolerance,
-                    "max_loss_per_trade": max_loss_per_trade
+                    "max_loss_per_trade": max_loss_per_trade,
+                    "portfolio_value": portfolio_value  # Pass actual portfolio value
                 }
                 
                 strategy = strategy_gen.generate_strategy(evaluation, user_prefs)

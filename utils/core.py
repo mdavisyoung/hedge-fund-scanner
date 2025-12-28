@@ -326,16 +326,22 @@ Use clear numbers, proper calculations, and simple language. Format with markdow
         risk_tolerance = user_prefs.get('risk_tolerance', 5)
         max_loss_pct = user_prefs.get('max_loss_per_trade', 2)
         
+        # Get actual portfolio value if available, otherwise estimate
+        portfolio_value = user_prefs.get('portfolio_value', monthly_budget * 12)
+        
         # Calculate position sizing for context
-        # Assume current portfolio value (simplified - could use monthly budget × months)
-        portfolio_value = monthly_budget * 12  # Rough estimate
         stop_loss_pct = 10.0  # Default 10% stop-loss
         max_loss_amount = portfolio_value * (max_loss_pct / 100)
         stop_loss_distance = current_price * (stop_loss_pct / 100)
-        shares = int(max_loss_amount / stop_loss_distance) if stop_loss_distance > 0 else 0
-        position_value = shares * current_price if shares > 0 else 0
+        shares_by_risk = max_loss_amount / stop_loss_distance if stop_loss_distance > 0 else 0
         
-        prompt = f"""Analyze this stock and provide an investment strategy:
+        # Calculate DCA parameters
+        shares_monthly = monthly_budget / current_price if current_price > 0 else 0
+        months_to_build = 12
+        target_shares = shares_monthly * months_to_build
+        target_value = target_shares * current_price
+        
+        prompt = f"""Analyze this stock and provide an investment strategy WITH DOLLAR-COST AVERAGING PLAN:
 
 STOCK INFORMATION:
 - Ticker: {ticker}
@@ -353,25 +359,58 @@ KEY METRICS:
 - Beta: {beta:.2f}
 
 INVESTOR PROFILE:
-- Monthly Investment Budget: ${monthly_budget}
+- Portfolio Value: ${portfolio_value:,.2f} (cash + current positions)
+- Monthly Investment Budget: ${monthly_budget:.2f}
 - Risk Tolerance: {risk_tolerance}/10 (1=Conservative, 10=Aggressive)
 - Maximum Loss Per Trade: {max_loss_pct}% of portfolio
 
-POSITION SIZING CALCULATION (for reference):
-- Estimated Portfolio Value: ${portfolio_value:,.0f}
-- Maximum Loss Amount: ${max_loss_amount:.2f} (2% of portfolio)
-- Stop-Loss Distance: ${stop_loss_distance:.2f} (10% below entry)
-- Recommended Shares: {shares} shares
-- Position Value: ${position_value:.2f}
+DCA CALCULATIONS (Use these exact numbers):
+- Shares per Month: {shares_monthly:.2f} shares (${monthly_budget:.2f} ÷ ${current_price:.2f})
+- Monthly Investment: ${monthly_budget:.2f}
+- Target after 12 months: {target_shares:.2f} shares (${target_value:,.2f})
+- Maximum Loss Amount: ${max_loss_amount:.2f} ({max_loss_pct}% of portfolio)
 
-Provide a CLEAR, STRUCTURED analysis using the format specified in the system prompt.
+REQUIRED FORMAT:
 
-IMPORTANT: 
-- Use the exact format with **RECOMMENDATION**, **ANALYSIS**, **POSITION DETAILS**, and **RISK MANAGEMENT** sections
-- Show ALL calculations clearly
-- Use markdown formatting (headers, bullet points)
-- Keep language simple and professional
-- Double-check all math before outputting"""
+**RECOMMENDATION:** [BUY/HOLD/AVOID] - [One sentence summary]
+
+**ANALYSIS:**
+- Stock Type: {stock_type}
+- Key Strengths: [2-3 bullet points based on metrics above]
+- Key Concerns: [1-2 bullet points based on metrics above]
+
+**IMMEDIATE ACTION (This Month):**
+- Buy {shares_monthly:.2f} shares @ ${current_price:.2f} = ${monthly_budget:.2f}
+- This uses this month's ${monthly_budget:.2f} DCA budget
+- Stop-Loss: ${current_price * 0.90:.2f} (-10%)
+- Take-Profit: ${current_price * 1.20:.2f} (+20%)
+
+**DOLLAR-COST AVERAGING PLAN (Next 12 Months):**
+Month 1: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {shares_monthly:.2f} shares
+Month 2: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {shares_monthly * 2:.2f} shares
+Month 3: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {shares_monthly * 3:.2f} shares
+Month 6: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {shares_monthly * 6:.2f} shares
+Month 12: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {target_shares:.2f} shares
+
+**TARGET POSITION (After 12 Months):**
+- Total Shares: {target_shares:.2f}
+- Total Invested: ${monthly_budget * 12:,.2f}
+- Position Value: ${target_value:,.2f} (at current price)
+- Portfolio Allocation: {(target_value / portfolio_value * 100) if portfolio_value > 0 else 0:.1f}% of portfolio
+
+**RISK MANAGEMENT:**
+- Exit if price drops to ${current_price * 0.90:.2f} (stop-loss)
+- Take profit at ${current_price * 1.20:.2f} (+20% gain)
+- Max risk: ${max_loss_amount:.2f} ({max_loss_pct}% of portfolio)
+
+CRITICAL REQUIREMENTS:
+1. MUST include exact DCA plan showing monthly purchases
+2. MUST show "Buy {shares_monthly:.2f} shares this month" as immediate action
+3. MUST calculate total shares after 12 months
+4. MUST show position value at current price
+5. Use the calculations provided above - DO NOT recalculate
+6. Format with markdown headers and bullet points
+7. Be specific with numbers - no vague recommendations"""
         
         try:
             response = requests.post(
@@ -387,7 +426,7 @@ IMPORTANT:
                         {"role": "user", "content": prompt}
                     ],
                     "temperature": 0.7,
-                    "max_tokens": 1500
+                    "max_tokens": 2000
                 },
                 timeout=30
             )
