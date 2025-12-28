@@ -100,15 +100,15 @@ def fetch_all_exchange_tickers(force_refresh=False, cache_days=7, min_market_cap
                 if (age_days < cache_days and 
                     cached_filters.get('min_market_cap') == min_market_cap and
                     cached_filters.get('min_volume') == min_volume):
-                    print(f"📦 Using cached PRE-FILTERED ticker list")
+                    print(f"[CACHE] Using cached PRE-FILTERED ticker list")
                     print(f"   {len(cache_data.get('tickers', []))} tickers (cached {age_days} days ago)")
                     print(f"   Filters: Market cap >= ${min_market_cap:,}, Volume >= {min_volume:,}")
                     return cache_data.get('tickers', [])
         except Exception as e:
-            print(f"⚠️ Error reading cache: {e}, fetching fresh data...")
-    
-    print("🌐 Fetching and PRE-FILTERING tickers from exchanges...")
-    print(f"   Filters: Market cap >= ${min_market_cap:,}, Strong exchanges, Volume >= {min_volume:,}")
+            print(f"[WARNING] Error reading cache: {e}, fetching fresh data...")
+
+    print("[FETCH] Fetching and PRE-FILTERING tickers from exchanges...")
+    print(f"   Filters: Market cap >= ${min_market_cap:,}, Volume >= {min_volume:,}")
     print(f"   This will take ~2-5 minutes, then cached for {cache_days} days...")
     
     qualifying_tickers = []
@@ -118,7 +118,7 @@ def fetch_all_exchange_tickers(force_refresh=False, cache_days=7, min_market_cap
     # METHOD 1: NASDAQ API (BEST - Provides market cap, volume, exchange in bulk)
     # ============================================================================
     try:
-        print("\n   📊 Fetching from NASDAQ API (primary source)...")
+        print("\n   [API] Fetching from NASDAQ API (primary source)...")
         nasdaq_url = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25000&offset=0&download=true"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -173,18 +173,13 @@ def fetch_all_exchange_tickers(force_refresh=False, cache_days=7, min_market_cap
                     # Validate symbol
                     if not symbol or len(symbol) > 5 or not symbol.replace('.', '').isalpha():
                         continue
-                    
-                    # FILTER 1: Exchange (must be NASDAQ, NYSE, or AMEX)
-                    if exchange not in ['NASDAQ', 'NYSE', 'AMEX']:
-                        stats['filtered_exchange'] += 1
-                        continue
-                    
-                    # FILTER 2: Market cap
+
+                    # FILTER 1: Market cap
                     if market_cap < min_market_cap:
                         stats['filtered_market_cap'] += 1
                         continue
-                    
-                    # FILTER 3: Volume (if enabled)
+
+                    # FILTER 2: Volume (if enabled)
                     if min_volume > 0 and volume < min_volume:
                         stats['filtered_volume'] += 1
                         continue
@@ -193,39 +188,38 @@ def fetch_all_exchange_tickers(force_refresh=False, cache_days=7, min_market_cap
                     if symbol not in qualifying_tickers:
                         qualifying_tickers.append(symbol)
                 
-                print(f"      ✅ NASDAQ API: Found {len(qualifying_tickers)} qualifying tickers")
+                print(f"      [OK] NASDAQ API: Found {len(qualifying_tickers)} qualifying tickers")
                 print(f"         Filtered out: {stats['filtered_market_cap']} (low market cap), "
-                      f"{stats['filtered_exchange']} (weak exchange), "
                       f"{stats['filtered_volume']} (low volume)")
-    
+
     except Exception as e:
-        print(f"      ⚠️ NASDAQ API failed: {e}")
+        print(f"      [WARNING] NASDAQ API failed: {e}")
     
     # ============================================================================
     # METHOD 2: Add hardcoded high-quality stocks (safety net)
     # ============================================================================
-    print("\n   📊 Adding curated high-quality stocks as safety net...")
+    print("\n   [SAFETY] Adding curated high-quality stocks as safety net...")
     safety_net = list(set(
-        SP500_TECH + SP500_FINANCIAL + SP500_HEALTHCARE + 
-        SP500_CONSUMER + SP500_ENERGY_INDUSTRIAL + 
+        SP500_TECH + SP500_FINANCIAL + SP500_HEALTHCARE +
+        SP500_CONSUMER + SP500_ENERGY_INDUSTRIAL +
         GROWTH_MOVERS + SMALL_MID_CAPS
     ))
-    
+
     added = 0
     for ticker in safety_net:
         if ticker not in qualifying_tickers:
             qualifying_tickers.append(ticker)
             added += 1
-    
-    print(f"      ✅ Added {added} curated tickers to ensure quality stocks included")
-    
+
+    print(f"      [OK] Added {added} curated tickers to ensure quality stocks included")
+
     # ============================================================================
     # Final cleanup and sorting
     # ============================================================================
     # Remove any duplicates and sort alphabetically
     qualifying_tickers = sorted(list(set(qualifying_tickers)))
-    
-    print(f"\n✅ Total qualifying tickers: {len(qualifying_tickers)}")
+
+    print(f"\n[SUCCESS] Total qualifying tickers: {len(qualifying_tickers)}")
     print(f"   Will be distributed across 5 weekdays (~{len(qualifying_tickers)//5} per day)")
     
     # Save to cache
@@ -243,9 +237,9 @@ def fetch_all_exchange_tickers(force_refresh=False, cache_days=7, min_market_cap
         }
         with open(cache_file, 'w') as f:
             json.dump(cache_data, f, indent=2)
-        print(f"💾 Cached to {cache_file} (valid for {cache_days} days)")
+        print(f"[CACHE] Cached to {cache_file} (valid for {cache_days} days)")
     except Exception as e:
-        print(f"⚠️ Failed to cache: {e}")
+        print(f"[WARNING] Failed to cache: {e}")
     
     return qualifying_tickers
 
@@ -309,7 +303,7 @@ def filter_strong_markets_legacy(tickers, min_market_cap=50_000_000, min_volume=
     skipped_weak_market = 0
     skipped_low_volume = 0
     
-    print(f"🔍 Validating {len(tickers)} hardcoded tickers...")
+    print(f"[VALIDATE] Validating {len(tickers)} hardcoded tickers...")
     print(f"   Criteria: Market cap >= ${min_market_cap:,}, Strong exchange, Volume >= {min_volume:,}")
     
     for ticker in tickers:
@@ -342,7 +336,7 @@ def filter_strong_markets_legacy(tickers, min_market_cap=50_000_000, min_volume=
         except Exception as e:
             continue  # Skip if can't determine
     
-    print(f"✅ Validated {len(filtered_tickers)} tickers")
+    print(f"[OK] Validated {len(filtered_tickers)} tickers")
     if skipped_low_cap + skipped_weak_market + skipped_low_volume > 0:
         print(f"   Skipped: {skipped_low_cap} low market cap, {skipped_weak_market} weak market, {skipped_low_volume} low volume")
     
@@ -369,7 +363,7 @@ def get_dynamic_daily_batch(day_of_week, min_market_cap=50_000_000, min_volume=1
     """
     # Only scan weekdays (0-4)
     if day_of_week >= 5:
-        print("📅 Weekend - no dynamic scan scheduled")
+        print("[WEEKEND] Weekend - no dynamic scan scheduled")
         return []
     
     # Fetch all tickers (ALREADY PRE-FILTERED during fetch!)
@@ -380,7 +374,7 @@ def get_dynamic_daily_batch(day_of_week, min_market_cap=50_000_000, min_volume=1
     )
     
     if not all_tickers:
-        print("⚠️ No tickers fetched, falling back to hardcoded list")
+        print("[WARNING] No tickers fetched, falling back to hardcoded list")
         batches = {
             0: SP500_TECH + GROWTH_MOVERS,
             1: SP500_FINANCIAL + SP500_ENERGY_INDUSTRIAL[:20],
@@ -402,7 +396,7 @@ def get_dynamic_daily_batch(day_of_week, min_market_cap=50_000_000, min_volume=1
     day_tickers = all_tickers[start_idx:end_idx]
     
     day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-    print(f"\n📅 {day_names[day_of_week]} batch: {len(day_tickers)} tickers")
+    print(f"\n[BATCH] {day_names[day_of_week]} batch: {len(day_tickers)} tickers")
     print(f"   Range: {start_idx} to {end_idx} of {total} total")
     print(f"   Weekly coverage: {(day_of_week+1)*20}% complete")
     
