@@ -381,9 +381,13 @@ Use clear numbers, proper calculations, and simple language. Format with markdow
         if not self.api_key:
             return "⚠️ XAI API key not configured. Add XAI_API_KEY to .env file."
         
+        # Check for placeholder values
+        if "your_xai" in self.api_key.lower() or "placeholder" in self.api_key.lower() or len(self.api_key) < 30:
+            return f"⚠️ **API key not set correctly!**\n\nYour .env file appears to have a placeholder value.\n\n**Please update your `.env` file with your actual xAI API key:**\n\n1. Get your API key from: https://console.x.ai\n2. Open `.env` file in the project root\n3. Replace the placeholder with:\n   ```\n   XAI_API_KEY=xai-your_actual_key_here\n   ```\n4. Make sure it's all on ONE line (no line breaks)\n5. Restart Streamlit\n\nCurrent key length: {len(self.api_key)} characters (should be 50+ characters)"
+        
         # Verify API key format (should start with xai- and be reasonable length)
         if not self.api_key.startswith("xai-") or len(self.api_key) < 50:
-            return f"⚠️ Invalid API key format. Key should start with 'xai-' and be longer. Current key length: {len(self.api_key)}"
+            return f"⚠️ Invalid API key format. Key should start with 'xai-' and be at least 50 characters long.\n\nCurrent key length: {len(self.api_key)} characters\nFirst 10 chars: {self.api_key[:10]}\n\nPlease check your `.env` file and ensure XAI_API_KEY is set correctly."
         
         # Extract data from evaluation object structure
         fundamentals = stock_data.get('fundamentals', {})
