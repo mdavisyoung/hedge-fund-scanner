@@ -323,6 +323,7 @@ class XAIStrategyGenerator:
     def __init__(self):
         self.api_key = os.getenv("XAI_API_KEY")
         self.base_url = "https://api.x.ai/v1/chat/completions"
+        self.model_name = os.getenv("XAI_MODEL", "grok-beta")  # Default to grok-beta
         
         self.system_prompt = """You are an expert hedge fund strategist combining Warren Buffett (value investing), Ray Dalio (risk parity), and Jim Simons (quantitative analysis).
 
@@ -451,7 +452,7 @@ IMPORTANT:
                     "Authorization": f"Bearer {self.api_key}"
                 },
                 json={
-                    "model": "grok-beta",  # Changed from grok-3 (may not exist)
+                    "model": self.model_name,  # Configurable via XAI_MODEL env var
                     "messages": [
                         {"role": "system", "content": self.system_prompt},
                         {"role": "user", "content": prompt}
