@@ -451,7 +451,7 @@ IMPORTANT:
                     "Authorization": f"Bearer {self.api_key}"
                 },
                 json={
-                    "model": "grok-3",
+                    "model": "grok-beta",  # Changed from grok-3 (may not exist)
                     "messages": [
                         {"role": "system", "content": self.system_prompt},
                         {"role": "user", "content": prompt}
@@ -465,7 +465,14 @@ IMPORTANT:
             if response.status_code == 200:
                 return response.json()["choices"][0]["message"]["content"]
             else:
-                return f"⚠️ API Error: {response.status_code}"
+                # Get detailed error message from API response
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("error", {}).get("message", response.text)
+                    error_type = error_data.get("error", {}).get("type", "Unknown")
+                    return f"⚠️ API Error {response.status_code}: {error_type}\n\n{error_msg}"
+                except:
+                    return f"⚠️ API Error: {response.status_code}\n\nResponse: {response.text[:500]}"
         except Exception as e:
             return f"⚠️ Error: {str(e)}"
 
