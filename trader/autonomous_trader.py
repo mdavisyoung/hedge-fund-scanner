@@ -278,7 +278,7 @@ Format your response as JSON:
                     "Authorization": f"Bearer {self.xai_key}"
                 },
                 json={
-                    "model": os.getenv("XAI_MODEL", "grok-4.1-fast"),  # Use latest Grok model
+                    "model": os.getenv("XAI_MODEL", "grok-3"),  # Use grok-3 for strong reasoning
                     "messages": [
                         {"role": "system", "content": "You are an expert AI trader analyzing opportunities. Respond only with valid JSON."},
                         {"role": "user", "content": prompt}

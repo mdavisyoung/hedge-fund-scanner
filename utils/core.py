@@ -325,8 +325,8 @@ class XAIStrategyGenerator:
         # Remove any whitespace, newlines, or quotes that might have been accidentally included
         self.api_key = api_key_raw.replace("\n", "").replace("\r", "").replace('"', "").replace("'", "").strip()
         self.base_url = "https://api.x.ai/v1/chat/completions"
-        # Use latest Grok model: grok-4.1-fast for speed, or grok-4-07-09 for latest features
-        self.model_name = os.getenv("XAI_MODEL", "grok-4.1-fast")  # Default to latest fast model
+        # Use grok-3 for strong reasoning and general capabilities
+        self.model_name = os.getenv("XAI_MODEL", "grok-3")  # Default to grok-3
         
         self.system_prompt = """You are an expert hedge fund strategist combining Warren Buffett (value investing), Ray Dalio (risk parity), and Jim Simons (quantitative analysis).
 
