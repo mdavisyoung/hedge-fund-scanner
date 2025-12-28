@@ -321,7 +321,9 @@ class StockAnalyzer:
 
 class XAIStrategyGenerator:
     def __init__(self):
-        self.api_key = os.getenv("XAI_API_KEY")
+        api_key_raw = os.getenv("XAI_API_KEY", "").strip()
+        # Remove any whitespace, newlines, or quotes that might have been accidentally included
+        self.api_key = api_key_raw.replace("\n", "").replace("\r", "").replace('"', "").replace("'", "").strip()
         self.base_url = "https://api.x.ai/v1/chat/completions"
         self.model_name = os.getenv("XAI_MODEL", "grok-beta")  # Default to grok-beta
         
