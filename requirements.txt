@@ -7,3 +7,4 @@ python-dotenv==1.0.1
 numpy>=1.24.0
 pyyaml==6.0.1
 alpaca-py==0.21.0
+psutil>=5.9.0

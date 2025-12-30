@@ -256,9 +256,8 @@ with col4:
         st.session_state['active_tab'] = 'Auto Trading'
 
 with col5:
-    if st.button("📋 Copy Trades", use_container_width=True):
-        st.switch_page("pages/02_Auto_Trading_Hub.py")
-        st.session_state['active_tab'] = 'Copy Trades'
+    if st.button("📋 Personal Trades", use_container_width=True):
+        st.switch_page("pages/05_Personal_Trades.py")
 
 st.divider()
 st.caption("⚠️ Disclaimer: Educational purposes only. Not financial advice.")

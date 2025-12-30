@@ -7,6 +7,11 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils import StockAnalyzer, XAIStrategyGenerator
+from utils.dexter_client import DexterClient
+from utils.portfolio_context import PortfolioContext
+from utils.storage import StorageManager
+from datetime import datetime
+import re
 
 st.set_page_config(page_title="Stock Analyzer", page_icon="📈", layout="wide")
 
@@ -21,6 +26,36 @@ st.markdown("*Deep-dive analysis with AI-powered recommendations*")
 
 analyzer = StockAnalyzer()
 strategy_gen = XAIStrategyGenerator()
+storage = StorageManager()
+
+def format_dexter_response(dexter_text: str, fundamentals: dict, monthly_contrib: float) -> str:
+    """
+    Format Dexter's response to match Stock Analyzer format
+    Extracts key sections and ensures proper formatting
+    """
+    # If Dexter already formatted it well, return as-is
+    if "**RECOMMENDATION:**" in dexter_text and "**DOLLAR-COST AVERAGING PLAN**" in dexter_text:
+        return dexter_text
+    
+    # Otherwise, try to extract and reformat
+    lines = dexter_text.split('\n')
+    formatted = []
+    
+    for line in lines:
+        # Clean up formatting
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Convert markdown headers to match format
+        if line.startswith('##'):
+            formatted.append(line.replace('##', '**').replace('**', '**', 1) + '**')
+        elif line.startswith('#'):
+            formatted.append('**' + line.replace('#', '').strip() + '**')
+        else:
+            formatted.append(line)
+    
+    return '\n\n'.join(formatted)
 
 with st.sidebar:
     st.subheader("Analysis Settings")
@@ -212,22 +247,406 @@ if analyze_button and ticker:
             
             st.divider()
             
-            # AI Strategy
+            # AI Strategy - Using Dexter (Hedge Fund Manager)
             st.subheader("🤖 AI-Generated Strategy")
             
-            with st.spinner("Generating strategy with xAI Grok..."):
-                # Calculate portfolio value (can be enhanced to use actual portfolio value later)
-                portfolio_value = monthly_contribution * 12  # Default: 12 months of contributions
+            # Add Deep Business Research button
+            col_dex1, col_dex2 = st.columns([1, 1])
+            with col_dex1:
+                use_dexter_deep = st.checkbox("🔍 Deep Business Research with Dexter", value=True, help="Get comprehensive business analysis including moat, management, and 10-year outlook")
+            
+            # Get actual portfolio context
+            try:
+                storage = StorageManager()
+                portfolio = storage.load_portfolio()
+                if portfolio:
+                    portfolio_value = portfolio.get('total_value', monthly_contribution * 12)
+                    portfolio_cash = portfolio.get('current_cash', 0)
+                else:
+                    portfolio_value = monthly_contribution * 12
+                    portfolio_cash = 0
+            except:
+                portfolio_value = monthly_contribution * 12
+                portfolio_cash = 0
+            
+            # Use Dexter for strategy generation (default enabled)
+            use_dexter = True  # Always use Dexter now
+            
+            if use_dexter:
+                # Check if Dexter is available first
+                dexter_client = DexterClient()
+                dexter_available = dexter_client.health_check()
                 
-                user_prefs = {
-                    "monthly_contribution": monthly_contribution,
-                    "risk_tolerance": risk_tolerance,
-                    "max_loss_per_trade": max_loss_per_trade,
-                    "portfolio_value": portfolio_value  # Pass actual portfolio value
-                }
+                if not dexter_available:
+                    st.warning("⚠️ **Dexter service is not running.** Falling back to standard strategy generator.")
+                    st.info("💡 To use Dexter (Hedge Fund Manager), start NewsAdmin:\n```bash\ncd NewsAdmin\nnpm run dev\n```")
+                    st.divider()
+                    # Fallback to original
+                    with st.spinner("Generating strategy with xAI Grok..."):
+                        user_prefs = {
+                            "monthly_contribution": monthly_contribution,
+                            "risk_tolerance": risk_tolerance,
+                            "max_loss_per_trade": max_loss_per_trade,
+                            "portfolio_value": portfolio_value
+                        }
+                        strategy = strategy_gen.generate_strategy(evaluation, user_prefs)
+                        st.markdown(strategy)
+                else:
+                    # Show appropriate spinner message based on research type
+                    spinner_msg = "🤖 Dexter is performing deep business analysis... (This may take 2-3 minutes)" if use_dexter_deep else "🤖 Dexter is analyzing with portfolio context..."
+                    with st.spinner(spinner_msg):
+                        try:
+                            portfolio_context = PortfolioContext()
+                            context = portfolio_context.get_context()
+                            
+                            # Add user preferences to context
+                            context['monthly_contribution'] = monthly_contribution
+                            context['risk_tolerance'] = risk_tolerance
+                            context['max_loss_per_trade'] = max_loss_per_trade
+                            context['risk_settings'] = {
+                                'max_loss_per_trade': max_loss_per_trade,
+                                'max_position_size_pct': 20.0
+                            }
+                            
+                            # Use the EXACT SAME hedge fund manager instructions as Chat with Dexter
+                            cash_available = context.get('cash', portfolio_cash)
+                            monthly_contrib = context.get('monthly_contribution', monthly_contribution)
+                            total_value = context.get('total_value', portfolio_value)
+                            holdings_list = list(context.get('holdings', {}).keys())
+                            holdings_text = ', '.join(holdings_list) if holdings_list else 'None'
+                            
+                            # Calculate position sizing limits (SAME as Chat with Dexter)
+                            max_position_pct = context.get('risk_settings', {}).get('max_position_size_pct', 20.0)
+                            max_position_value = total_value * (max_position_pct / 100)
+                            available_for_this_trade = min(cash_available * 0.8, max_position_value)
+                            
+                            # Build the EXACT SAME hedge fund instructions as Chat with Dexter
+                            hedge_fund_instructions = f"""
+[YOUR ROLE: HEDGE FUND MANAGER]
+You are the AI hedge fund manager for this portfolio. Your job is to provide ACTIONABLE investment recommendations.
+
+PORTFOLIO STATUS:
+- Available Cash: ${cash_available:,.2f}
+- Total Portfolio Value: ${total_value:,.2f}
+- Monthly Contribution Capacity: ${monthly_contrib:,.2f}/month (recurring)
+- Current Holdings: {holdings_text}
+- Maximum Position Size: {max_position_pct}% of portfolio (${max_position_value:,.2f})
+- Recommended Max for This Trade: ${available_for_this_trade:,.2f} (leaves room for diversification)
+
+CRITICAL POSITION SIZING RULES:
+1. **NEVER suggest using ALL available cash on one trade**
+2. **Reserve at least 20% of cash for other opportunities** (diversification)
+3. **Maximum position size: {max_position_pct}% of total portfolio** (${max_position_value:,.2f})
+4. **For this specific trade, suggest no more than: ${available_for_this_trade:,.2f}**
+5. **If stock price > ${monthly_contrib:.0f}, suggest DCA over multiple months** (don't wait to save up)
+
+REQUIRED OUTPUT FORMAT:
+1. **RECOMMENDATION:** [BUY / SELL / HOLD / AVOID] - [One sentence summary]
+2. **POSITION SIZING:** 
+   - Recommended investment amount: $[XXX.XX] (MUST be ≤ ${available_for_this_trade:,.2f})
+   - Number of shares: [X] shares
+   - Position size as % of portfolio: [X]% (MUST be ≤ {max_position_pct}%)
+   - Remaining cash after this trade: $[XXX.XX] (for other opportunities)
+3. **DOLLAR-COST AVERAGING (DCA) PLAN:**
+   - **IMPORTANT:** User adds ${monthly_contrib:.2f} per month to portfolio
+   - **If stock price > ${monthly_contrib:.0f}:** Suggest DCA strategy that uses PART of monthly contribution
+   - **Example for expensive stocks:** "Invest ${monthly_contrib * 0.5:.0f} per month for X months" (leaves ${monthly_contrib * 0.5:.0f}/month for other trades)
+   - **Example for affordable stocks:** "Invest ${monthly_contrib * 0.3:.0f} per month for X months" (leaves ${monthly_contrib * 0.7:.0f}/month for diversification)
+   - **Goal:** Build position gradually while maintaining ability to invest in other opportunities
+   - **Never suggest using 100% of monthly contribution on one stock**
+4. **ENTRY/EXIT STRATEGY:**
+   - Entry price: $[X.XX] (current or target)
+   - Stop-loss: $[X.XX] (-[X]%)
+   - Target price: $[X.XX] (+[X]%)
+   - Time horizon: [Short-term / Medium-term / Long-term]
+5. **RISK ASSESSMENT:**
+   - Maximum risk per trade: [X]% of portfolio
+   - Portfolio fit: [How this fits with current holdings: {holdings_text}]
+   - Diversification note: [Why leaving cash for other trades is important]
+6. **COMPANY OVERVIEW:** [What the company does - REQUIRED in every response]
+   - Business Description: [What the company does]
+   - Sector: {fundamentals.get('sector', 'Unknown')}
+   - Industry: {fundamentals.get('industry', 'Unknown')}
+7. **ANALYSIS:**
+   - Stock Type: {stock_type}
+   - Key Strengths: [2-3 bullet points]
+   - Key Concerns: [1-2 bullet points]
+8. **IMMEDIATE ACTION (This Month):**
+   - Buy [X] shares @ ${fundamentals['current_price']:.2f} = $[XXX.XX] (MUST be ≤ ${available_for_this_trade:,.2f})
+   - This uses PART of this month's ${monthly_contrib:.2f} DCA budget (NOT all of it)
+   - Stop-Loss: $[X.XX] (-[X]%)
+   - Take-Profit: $[X.XX] (+[X]%)
+9. **DOLLAR-COST AVERAGING PLAN (Next 12 Months):**
+   - Month 1: Buy [X] shares ($[XXX.XX]) → Total: [X] shares
+   - Month 2: Buy [X] shares ($[XXX.XX]) → Total: [X] shares
+   - [Continue for 12 months - use PART of monthly contribution each month]
+10. **TARGET POSITION (After 12 Months):**
+   - Total Shares: [X]
+   - Total Invested: $[XXX.XX]
+   - Position Value: $[XXX.XX] (at current price)
+   - Portfolio Allocation: [X]% of portfolio (MUST be ≤ {max_position_pct}%)
+11. **RISK MANAGEMENT:**
+   - Exit if price drops to $[X.XX] (stop-loss)
+   - Take profit at $[X.XX] (+[X]% gain)
+   - Max risk: $[XX.XX] ({max_loss_per_trade}% of portfolio)
+
+IMPORTANT:
+- **NEVER suggest using all ${cash_available:,.2f} cash on one trade**
+- **Always leave at least 20% of cash available** for other opportunities
+- **For expensive stocks (price > ${monthly_contrib:.0f}), suggest DCA using PART of monthly contribution**
+- **Example:** If monthly contribution is ${monthly_contrib:.2f}, suggest using ${monthly_contrib * 0.4:.0f}-${monthly_contrib * 0.6:.0f} per month for this stock, leaving the rest for other trades
+- Make clear BUY/SELL/HOLD recommendations
+- Use CURRENT stock price: ${fundamentals['current_price']:.2f}
+- Consider diversification with current holdings: {holdings_text}
+"""
+                            
+                            # Build query based on deep research toggle
+                            if use_dexter_deep:
+                                query = f"""As my hedge fund manager, provide a DEEP BUSINESS ANALYSIS of {ticker}:
+
+Portfolio Context:
+- Total Portfolio Value: ${portfolio_value:,.2f}
+- Available Cash: ${cash_available:,.2f}
+- Monthly Contribution: ${monthly_contribution:.2f}
+- Current Holdings: {', '.join(holdings_list) if holdings_list else 'None'}
+
+DEEP BUSINESS RESEARCH REQUIRED:
+
+1. **What does this company actually do?**
+   - Business model, products/services, customers
+   - Industry position and competitive landscape
+   - Revenue sources: {fundamentals.get('description', 'Research required')[:200]}
+
+2. **Competitive Moat Assessment:**
+   - What protects this business from competition?
+   - Type of moat: Brand/Network/Cost/Switching/Scale/Regulatory
+   - Sustainability: Will this moat last 10+ years?
+   - Evidence: Specific examples
+
+3. **10-Year Business Outlook:**
+   - Will this business be stronger or weaker in 2035?
+   - Growth drivers and headwinds
+   - Industry trends and disruption risks
+   - Predictability of cash flows
+
+4. **Management Quality:**
+   - Capital allocation track record
+   - Honesty and communication
+   - Insider ownership and alignment
+   - Long-term thinking vs short-term focus
+
+5. **Financial Health:**
+   - ROE: {fundamentals.get('roe', 0):.1f}% (sustainable? 15%+ is quality)
+   - P/E: {fundamentals.get('pe_ratio', 0):.1f}x (reasonable for quality?)
+   - Free cash flow generation
+   - Debt levels and financial strength
+
+6. **Valuation:**
+   - Intrinsic value estimate
+   - Margin of safety at ${fundamentals['current_price']:.2f}
+   - Would Buffett buy this at this price?
+
+INVESTMENT RECOMMENDATION:
+{hedge_fund_instructions}
+
+Current stock price: ${fundamentals['current_price']:.2f}
+Stock Type: {stock_type}
+Fundamentals: P/E={fundamentals.get('pe_ratio', 0):.2f}, ROE={fundamentals.get('roe', 0):.2f}%, Revenue Growth={fundamentals.get('revenue_growth', 0):.2f}%
+
+Remember: Focus on BUSINESS QUALITY for 10+ year ownership, not short-term price movements."""
+                            else:
+                                query = f"""Provide a comprehensive investment strategy for {ticker}:
+
+{hedge_fund_instructions}
+
+Current stock price: ${fundamentals['current_price']:.2f}
+Stock Type: {stock_type}
+Fundamentals: P/E={fundamentals.get('pe_ratio', 0):.2f}, ROE={fundamentals.get('roe', 0):.2f}%, Revenue Growth={fundamentals.get('revenue_growth', 0):.2f}%"""
+                            
+                            # Use longer timeout for deep research
+                            timeout_seconds = 180 if use_dexter_deep else 120  # 3 minutes for deep research
+                            result = dexter_client.research(query, portfolio_context=context, timeout=timeout_seconds)
+                            strategy_text = result.get('answer', 'No response received')
+                            
+                            # Check if there was an error
+                            if result.get('error'):
+                                st.warning(f"⚠️ Dexter returned an error: {result.get('error')}")
+                                st.info("Falling back to standard strategy generator...")
+                                # Fallback to original
+                                user_prefs = {
+                                    "monthly_contribution": monthly_contribution,
+                                    "risk_tolerance": risk_tolerance,
+                                    "max_loss_per_trade": max_loss_per_trade,
+                                    "portfolio_value": portfolio_value
+                                }
+                                strategy = strategy_gen.generate_strategy(evaluation, user_prefs)
+                                st.markdown(strategy)
+                            else:
+                                # Format the response to match Stock Analyzer style
+                                formatted_strategy = format_dexter_response(strategy_text, fundamentals, monthly_contribution)
+                                st.markdown(formatted_strategy)
+                                
+                        except Exception as e:
+                            st.warning(f"⚠️ Dexter unavailable: {str(e)}. Falling back to standard strategy generator.")
+                            # Fallback to original
+                            with st.spinner("Generating strategy with xAI Grok..."):
+                                user_prefs = {
+                                    "monthly_contribution": monthly_contribution,
+                                    "risk_tolerance": risk_tolerance,
+                                    "max_loss_per_trade": max_loss_per_trade,
+                                    "portfolio_value": portfolio_value
+                                }
+                                strategy = strategy_gen.generate_strategy(evaluation, user_prefs)
+                                st.markdown(strategy)
+            else:
+                # Use original XAIStrategyGenerator
+                with st.spinner("Generating strategy with xAI Grok..."):
+                    user_prefs = {
+                        "monthly_contribution": monthly_contribution,
+                        "risk_tolerance": risk_tolerance,
+                        "max_loss_per_trade": max_loss_per_trade,
+                        "portfolio_value": portfolio_value
+                    }
+                    strategy = strategy_gen.generate_strategy(evaluation, user_prefs)
+                    st.markdown(strategy)
+            
+            # Trade Entry Form - Always show after analysis
+            st.divider()
+            
+            # Make it very visible
+            st.markdown("---")
+            st.markdown(f"## 📝 Record Trade: {ticker}")
+            st.markdown(f"**Record your purchase of {ticker} to track it in Personal Trades**")
+            st.markdown("---")
+            
+            with st.form(key=f"trade_entry_{ticker}", clear_on_submit=False):
+                col1, col2, col3 = st.columns(3)
                 
-                strategy = strategy_gen.generate_strategy(evaluation, user_prefs)
-                st.markdown(strategy)
+                with col1:
+                    trade_price = st.number_input(
+                        "Purchase Price ($)",
+                        min_value=0.01,
+                        value=float(fundamentals['current_price']),
+                        step=0.01,
+                        format="%.2f",
+                        key=f"trade_price_{ticker}"
+                    )
+                
+                with col2:
+                    trade_shares = st.number_input(
+                        "Shares Purchased",
+                        min_value=0.0,
+                        value=0.0,
+                        step=0.01,
+                        format="%.2f",
+                        help="Enter the number of shares you purchased",
+                        key=f"trade_shares_{ticker}"
+                    )
+                
+                with col3:
+                    trade_total = trade_price * trade_shares if trade_shares > 0 else 0.0
+                    st.metric("Total Cost", f"${trade_total:.2f}")
+                    if trade_shares > 0:
+                        st.caption(f"💡 Recording {trade_shares:.2f} shares of {ticker}")
+                
+                trade_notes = st.text_area(
+                    "Notes (optional)",
+                    placeholder="e.g., Following Dexter's recommendation, DCA month 1",
+                    height=60,
+                    key=f"trade_notes_{ticker}"
+                )
+                
+                # Submit button must be last in form
+                submit_trade = st.form_submit_button("💾 Record Trade", use_container_width=True, type="primary")
+            
+            # Handle form submission (outside form context)
+            if submit_trade:
+                # Get values from session state (they persist after form submission)
+                trade_price_val = st.session_state.get(f"trade_price_{ticker}", float(fundamentals['current_price']))
+                trade_shares_val = st.session_state.get(f"trade_shares_{ticker}", 0.0)
+                trade_notes_val = st.session_state.get(f"trade_notes_{ticker}", "")
+                
+                if trade_shares_val > 0:
+                    try:
+                        # Load portfolio
+                        portfolio = storage.load_portfolio()
+                        if not portfolio:
+                            st.error("Please initialize your portfolio first in the Auto Trading Hub sidebar")
+                        else:
+                            # Add trade to portfolio
+                            from utils import AIPortfolioManager
+                            portfolio_manager = AIPortfolioManager(storage)
+                            
+                            # Record the trade
+                            trade_total_val = trade_price_val * trade_shares_val
+                            trade_data = {
+                                'ticker': ticker,
+                                'action': 'BUY',
+                                'shares': trade_shares_val,
+                                'price': trade_price_val,
+                                'total_cost': trade_total_val,
+                                'timestamp': datetime.now().isoformat(),
+                                'notes': trade_notes_val,
+                                'source': 'stock_analyzer'
+                            }
+                            
+                            # Update portfolio
+                            if ticker not in portfolio.get('positions', {}):
+                                portfolio['positions'][ticker] = {
+                                    'shares': 0,
+                                    'entry_price': 0,
+                                    'total_cost': 0,
+                                    'entry_date': datetime.now().isoformat()
+                                }
+                            
+                            # Add to position
+                            pos = portfolio['positions'][ticker]
+                            total_shares = pos['shares'] + trade_shares_val
+                            total_cost = pos['total_cost'] + trade_total_val
+                            avg_entry = total_cost / total_shares if total_shares > 0 else trade_price_val
+                            
+                            portfolio['positions'][ticker].update({
+                                'shares': total_shares,
+                                'entry_price': avg_entry,
+                                'total_cost': total_cost
+                            })
+                            
+                            # Update cash
+                            portfolio['current_cash'] = portfolio.get('current_cash', 0) - trade_total_val
+                            
+                            # Add to trade history
+                            if 'trade_history' not in portfolio:
+                                portfolio['trade_history'] = []
+                            portfolio['trade_history'].append(trade_data)
+                            
+                            # Save
+                            storage.save_portfolio(portfolio)
+                            
+                            st.success(f"✅ Trade recorded! {trade_shares_val:.2f} shares of {ticker} @ ${trade_price_val:.2f}")
+                            
+                            # Clear form values from session state
+                            if f"trade_price_{ticker}" in st.session_state:
+                                del st.session_state[f"trade_price_{ticker}"]
+                            if f"trade_shares_{ticker}" in st.session_state:
+                                del st.session_state[f"trade_shares_{ticker}"]
+                            if f"trade_notes_{ticker}" in st.session_state:
+                                del st.session_state[f"trade_notes_{ticker}"]
+                            
+                            # Show link to Personal Trades
+                            col_link1, col_link2 = st.columns([1, 1])
+                            with col_link1:
+                                if st.button("📋 View in Personal Trades", use_container_width=True, type="primary"):
+                                    st.switch_page("pages/05_Personal_Trades.py")
+                            with col_link2:
+                                if st.button("🔄 Analyze Another Stock", use_container_width=True):
+                                    st.rerun()
+                            
+                            st.rerun()
+                            
+                    except Exception as e:
+                        st.error(f"Error recording trade: {str(e)}")
+                else:
+                    st.warning("Please enter the number of shares purchased (must be greater than 0)")
             
             # Export options
             st.divider()

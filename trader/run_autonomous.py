@@ -13,10 +13,15 @@ OPTIMIZATIONS:
 
 import sys
 import os
+import io
 from datetime import datetime, timedelta
 from pathlib import Path
 import time
 import argparse
+
+# Fix Windows encoding for emojis
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -37,10 +42,13 @@ def load_hot_stocks(storage, max_stocks=50):
     Returns:
         List of hot stocks, sorted by score, limited to max_stocks
     """
-    hot_stocks = storage.load_hot_stocks()
+    hot_stocks_data = storage.load_hot_stocks()
+    
+    # Extract stocks list from dict
+    hot_stocks = hot_stocks_data.get('stocks', []) if isinstance(hot_stocks_data, dict) else []
     
     if not hot_stocks:
-        print("📭 No hot stocks found from scanner")
+        print("No hot stocks found from scanner")
         return []
     
     # Sort by total_score descending
@@ -48,10 +56,10 @@ def load_hot_stocks(storage, max_stocks=50):
     
     # Limit to top N
     if len(hot_stocks) > max_stocks:
-        print(f"🔥 Found {len(hot_stocks)} hot stocks, limiting to top {max_stocks} by score")
+        print(f"Found {len(hot_stocks)} hot stocks, limiting to top {max_stocks} by score")
         hot_stocks = hot_stocks[:max_stocks]
     else:
-        print(f"🔥 Found {len(hot_stocks)} hot stocks")
+        print(f"Found {len(hot_stocks)} hot stocks")
     
     return hot_stocks
 
@@ -67,19 +75,19 @@ def run_once(trader: AutonomousTrader, storage: StorageManager, max_hot_stocks=5
     4. Execute trades if criteria met
     """
     print(f"\n{'='*60}")
-    print(f"🤖 AUTONOMOUS TRADER RUN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"AUTONOMOUS TRADER RUN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}\n")
     
     # Check if market is open
     if not trader.is_market_open():
-        print("🔒 Market is closed. Skipping this run.")
+        print("Market is closed. Skipping this run.")
         print(f"   Market hours: 9:30 AM - 4:00 PM ET, Monday-Friday")
         return
     
-    print("✅ Market is open\n")
+    print("Market is open\n")
     
     # Step 1: Monitor existing positions
-    print("📊 STEP 1: Monitoring existing positions...")
+    print("[STEP 1] Monitoring existing positions...")
     actions = trader.monitor_positions()
     
     if actions:
@@ -91,9 +99,9 @@ def run_once(trader: AutonomousTrader, storage: StorageManager, max_hot_stocks=5
         print("   No positions need action")
     
     # Step 2: Check circuit breaker
-    print("\n🛡️ STEP 2: Checking safety limits...")
+    print("\n[STEP 2] Checking safety limits...")
     if trader.trading_paused:
-        print(f"   🛑 Trading paused: {trader.pause_reason}")
+        print(f"   Trading paused: {trader.pause_reason}")
         return
     
     if trader.check_daily_loss_limit():
@@ -104,7 +112,7 @@ def run_once(trader: AutonomousTrader, storage: StorageManager, max_hot_stocks=5
     print(f"   Portfolio heat: {current_heat:.2%} / {trader.max_portfolio_heat:.2%}")
     
     if current_heat >= trader.max_portfolio_heat:
-        print("   ⚠️ Portfolio heat at maximum, no new positions allowed")
+        print("   Portfolio heat at maximum, no new positions allowed")
         return
     
     # Get account info
@@ -114,7 +122,7 @@ def run_once(trader: AutonomousTrader, storage: StorageManager, max_hot_stocks=5
     print(f"   Buying power: ${account['buying_power']:,.2f}")
     
     # Step 3: Analyze hot stocks
-    print(f"\n🔍 STEP 3: Analyzing hot stocks (limited to top {max_hot_stocks})...")
+    print(f"\n[STEP 3] Analyzing hot stocks (limited to top {max_hot_stocks})...")
     hot_stocks = load_hot_stocks(storage, max_stocks=max_hot_stocks)
     
     if not hot_stocks:
@@ -152,25 +160,25 @@ def run_once(trader: AutonomousTrader, storage: StorageManager, max_hot_stocks=5
         
         # Decide whether to trade
         if trader.should_trade(stock, analysis):
-            print(f"      ✅ Executing trade...")
+            print(f"      Executing trade...")
             result = trader.execute_trade(stock, analysis)
             
             if result:
                 trades_executed += 1
-                print(f"      ✅ Trade executed successfully!")
+                print(f"      Trade executed successfully!")
             else:
-                print(f"      ❌ Trade execution failed")
+                print(f"      Trade execution failed")
         else:
-            print(f"      ⏭️ Skipping (criteria not met)")
+            print(f"      Skipping (criteria not met)")
         
         # Check if we hit portfolio heat limit
         if trader.get_portfolio_heat() >= trader.max_portfolio_heat:
-            print(f"\n   🛑 Portfolio heat limit reached, stopping new trades")
+            print(f"\n   Portfolio heat limit reached, stopping new trades")
             break
     
     # Summary
     print(f"\n{'='*60}")
-    print(f"📈 RUN SUMMARY")
+    print(f"RUN SUMMARY")
     print(f"{'='*60}")
     print(f"Trades executed: {trades_executed}")
     print(f"AI calls made: {trader.ai_call_count_today}")
@@ -180,7 +188,7 @@ def run_once(trader: AutonomousTrader, storage: StorageManager, max_hot_stocks=5
     # Performance metrics
     metrics = trader.performance_metrics
     if metrics['total_trades'] > 0:
-        print(f"\n📊 OVERALL PERFORMANCE:")
+        print(f"\nOVERALL PERFORMANCE:")
         print(f"Total trades: {metrics['total_trades']}")
         print(f"Win rate: {metrics['win_rate']:.1f}%")
         print(f"Avg win: {metrics['avg_win']:.2f}%")
@@ -266,7 +274,7 @@ def main():
             return
     
     print(f"\n{'='*60}")
-    print(f"🤖 AUTONOMOUS AI TRADER")
+    print(f"AUTONOMOUS AI TRADER")
     print(f"{'='*60}")
     print(f"Mode: {args.mode}")
     if args.mode == 'continuous':

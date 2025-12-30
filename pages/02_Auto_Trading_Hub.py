@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils import StockAnalyzer, AIPortfolioManager, PortfolioSimulator
+from utils import StockAnalyzer, AIPortfolioManager, PortfolioSimulator, BuffettPortfolioManager
 from utils.storage import StorageManager
 from scanner.market_scanner import MarketScanner
 from scanner.scoring import TradeScorer
@@ -104,20 +104,38 @@ with st.sidebar:
     st.divider()
     
     # Quick actions
-    st.subheader("Quick Actions")
+    st.subheader("Auto-Trading Actions")
     if portfolio:
         hot_data = storage.load_hot_stocks()
         hot_count = hot_data.get('count', 0)
+        hot_stocks = [s['ticker'] for s in hot_data.get('stocks', [])]
         
-        if st.button("🔄 Auto-Manage Portfolio", use_container_width=True, type="primary"):
-            with st.spinner("Managing portfolio..."):
-                hot_stocks = [s['ticker'] for s in hot_data.get('stocks', [])]
+        if hot_count > 0:
+            st.info(f"📊 Scanner watchlist: **{hot_count} hot stocks** ready for analysis")
+            st.caption(f"Watchlist: {', '.join(hot_stocks[:10])}{'...' if len(hot_stocks) > 10 else ''}")
+        else:
+            st.warning("⚠️ No scanner results yet. Scanner runs automatically daily at 9:30 AM ET")
+            st.caption("The system will automatically trade from scanner watchlist once available")
+        
+        if st.button("🤖 Auto-Manage Portfolio (Hedge Fund Manager)", use_container_width=True, type="primary"):
+            with st.spinner("🔄 Hedge Fund Manager is analyzing watchlist and managing positions..."):
+                # Get hot stocks from scanner (this is the watchlist)
                 portfolio, activity_log = portfolio_manager.auto_manage_portfolio(portfolio, hot_stocks)
                 storage.save_portfolio(portfolio)
                 st.session_state['last_activity_log'] = activity_log
                 st.session_state['last_activity_time'] = datetime.now().isoformat()
-                st.success("Portfolio managed!")
+                
+                # Count actions
+                buys = len([a for a in activity_log if "BOUGHT" in a or "🟢" in a])
+                sells = len([a for a in activity_log if "SOLD" in a or "💰" in a])
+                
+                if buys > 0 or sells > 0:
+                    st.success(f"✅ Portfolio managed! Executed {buys} buys, {sells} sells. See activity log below.")
+                else:
+                    st.info("✅ Portfolio checked. No new trades needed at this time.")
                 st.rerun()
+        
+        st.divider()
         
         if st.button("➕ Add Monthly Contribution", use_container_width=True):
             portfolio = portfolio_manager.add_monthly_contribution(portfolio)
@@ -138,16 +156,38 @@ if portfolio:
     hot_data = storage.load_hot_stocks()
     progress = storage.load_scan_progress()
     
-    col1, col2, col3, col4, col5 = st.columns(5)
+    # Get deployment metrics
+    buffett_manager = BuffettPortfolioManager(storage)
+    if portfolio.get("philosophy") == "Buffett Buy-and-Hold":
+        metrics = buffett_manager.get_portfolio_metrics(portfolio)
+        deployed_pct = metrics["deployed_pct"]
+        target_deployment = metrics["target_deployment"]
+        deployment_gap = metrics["deployment_gap"]
+    else:
+        # Calculate deployment for non-Buffett portfolios
+        total_position_value = sum(
+            pos.get("entry_price", 0) * pos.get("shares", 0) 
+            for pos in positions.values()
+        )
+        total_value = current_cash + total_position_value
+        deployed_pct = (total_position_value / total_value * 100) if total_value > 0 else 0
+        target_deployment = 80
+        deployment_gap = deployed_pct - target_deployment
+    
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         st.metric("Portfolio Value", f"${portfolio_value:,.2f}")
     with col2:
         st.metric("Cash Available", f"${current_cash:,.2f}")
     with col3:
-        st.metric("Active Positions", len(positions))
+        # Deployment metric with color coding
+        delta_color = "normal" if abs(deployment_gap) < 10 else ("inverse" if deployment_gap < -10 else "off")
+        st.metric("Deployment", f"{deployed_pct:.1f}%", f"Target: {target_deployment}%", delta_color=delta_color)
     with col4:
-        st.metric("🔥 Hot Stocks", hot_data.get('count', 0))
+        st.metric("Active Positions", len(positions))
     with col5:
+        st.metric("🔥 Hot Stocks", hot_data.get('count', 0))
+    with col6:
         last_scan = progress.get('last_scan')
         if last_scan:
             scan_time = datetime.fromisoformat(last_scan).strftime("%b %d")
@@ -159,9 +199,44 @@ else:
 
 st.divider()
 
+# Auto-Trading Status & Activity Display
+if portfolio:
+    st.subheader("🤖 Auto-Trading System Status")
+    
+    hot_data = storage.load_hot_stocks()
+    hot_count = hot_data.get('count', 0)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if hot_count > 0:
+            st.success(f"✅ **{hot_count} Hot Opportunities** from Scanner")
+            st.caption("System will automatically evaluate and trade from this watchlist")
+        else:
+            st.warning("⚠️ **No hot stocks** - Scanner needs to run first")
+            st.caption("Scanner runs automatically daily at 9:30 AM ET via GitHub Actions")
+    
+    with col2:
+        last_managed = portfolio.get('last_managed')
+        if last_managed:
+            try:
+                managed_time = datetime.fromisoformat(last_managed)
+                time_str = managed_time.strftime("%Y-%m-%d %H:%M:%S")
+                st.info(f"📅 **Last Managed:** {time_str}")
+            except:
+                st.info("📅 **Last Managed:** Unknown")
+        else:
+            st.info("📅 **Never Auto-Managed** - Click 'Auto-Manage Portfolio' to start")
+    
+    with col3:
+        auto_trade_status = "🟢 Active" if hot_count > 0 else "🟡 Waiting for Scanner"
+        st.metric("Auto-Trade Status", auto_trade_status)
+        st.caption("System trades automatically from scanner watchlist")
+    
+    st.divider()
+
 # Activity Log Display
 if st.session_state.get('last_activity_log') and portfolio:
-    st.subheader("📋 Last Activity Log")
+    st.subheader("📋 Latest Auto-Trading Activity")
     activity_log = st.session_state.get('last_activity_log', [])
     last_time = st.session_state.get('last_activity_time')
     
@@ -169,22 +244,56 @@ if st.session_state.get('last_activity_log') and portfolio:
         try:
             time_obj = datetime.fromisoformat(last_time)
             time_str = time_obj.strftime("%Y-%m-%d %H:%M:%S")
-            st.caption(f"Last run: {time_str}")
+            st.caption(f"Last auto-manage run: {time_str}")
         except:
             pass
     
-    with st.expander("View Activity Details", expanded=False):
-        for activity in activity_log:
-            if "BOUGHT" in activity or "✅" in activity:
-                st.success(activity)
-            elif "SOLD" in activity or "💰" in activity:
-                st.info(activity)
-            elif "❌" in activity or "Failed" in activity:
-                st.error(activity)
-            elif "⚠️" in activity:
-                st.warning(activity)
-            else:
-                st.write(activity)
+    # Show recent activities in expandable sections
+    if activity_log:
+        # Group activities by type
+        buys = [a for a in activity_log if "BOUGHT" in a or "🟢" in a]
+        sells = [a for a in activity_log if "SOLD" in a or "💰" in a]
+        checks = [a for a in activity_log if "🔍" in a or "📊" in a or "Evaluating" in a]
+        skips = [a for a in activity_log if "⏸️" in a or "Skipped" in a]
+        errors = [a for a in activity_log if "❌" in a or "Failed" in a]
+        info = [a for a in activity_log if "ℹ️" in a or "✅" in a]
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if buys:
+                with st.expander(f"🟢 Trades Executed ({len(buys)})", expanded=True):
+                    for activity in buys:
+                        st.success(activity)
+            
+            if sells:
+                with st.expander(f"💰 Positions Exited ({len(sells)})", expanded=True):
+                    for activity in sells:
+                        st.info(activity)
+        
+        with col2:
+            if checks:
+                with st.expander(f"🔍 Analysis Performed ({len(checks)})", expanded=False):
+                    for activity in checks:
+                        st.write(activity)
+            
+            if skips:
+                with st.expander(f"⏸️ Opportunities Skipped ({len(skips)})", expanded=False):
+                    for activity in skips:
+                        st.warning(activity)
+        
+        if errors:
+            with st.expander(f"❌ Errors ({len(errors)})", expanded=False):
+                for activity in errors:
+                    st.error(activity)
+        
+        if info:
+            with st.expander(f"ℹ️ System Info ({len(info)})", expanded=False):
+                for activity in info:
+                    st.write(activity)
+    else:
+        st.info("No activity yet. Click 'Auto-Manage Portfolio' in the sidebar to start auto-trading.")
+    
     st.divider()
 
 # MAIN TABS
@@ -200,6 +309,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 # ============ TAB 1: PORTFOLIO OVERVIEW ============
 with tab1:
     st.subheader("📊 Portfolio Overview & Capital Management")
+    st.caption("**Hedge Fund Manager Dashboard** - Automatically trades from scanner watchlist and manages capital")
     
     if portfolio is None:
         st.info("👈 Initialize your portfolio in the sidebar to begin")
@@ -426,6 +536,7 @@ with tab1:
 # ============ TAB 2: SCANNER & OPPORTUNITIES ============
 with tab2:
     st.subheader("🔍 Stock Scanner & Trade Opportunities")
+    st.caption("**Automated Scanner** - Runs daily at 9:30 AM ET via GitHub Actions. Results feed into Hedge Fund Manager for auto-trading.")
     
     # Scanner controls
     col1, col2, col3 = st.columns([2, 1, 1])
@@ -727,12 +838,63 @@ with tab2:
 
 # ============ TAB 3: AUTO TRADING ============
 with tab3:
-    st.subheader("🤖 Autonomous Trading")
+    st.subheader("🤖 Autonomous Trading System")
+    st.caption("**Live Trading** - Monitors and executes trades via Alpaca API (requires Alpaca keys in .env)")
     
     if trader is None:
-        st.error(f"❌ Could not initialize autonomous trader: {trader_error}")
-        st.info("💡 Make sure ALPACA_API_KEY and ALPACA_SECRET_KEY are set in your .env file")
-        st.info("This feature requires Alpaca paper trading account")
+        st.warning("⚠️ **Alpaca Trader Not Available**")
+        
+        # Check if it's an authentication error
+        if "unauthorized" in str(trader_error).lower() or "401" in str(trader_error):
+            st.error("🔐 **Alpaca API Authentication Failed**")
+            st.markdown("""
+            **The Alpaca API returned "unauthorized". This means:**
+            
+            1. **Missing API Keys** - Add to your `.env` file:
+               ```
+               ALPACA_API_KEY=your_paper_trading_key_here
+               ALPACA_SECRET_KEY=your_paper_trading_secret_here
+               ```
+            
+            2. **Incorrect API Keys** - Verify your keys are correct:
+               - Get keys from: https://app.alpaca.markets/paper/dashboard/overview
+               - Make sure you're using **Paper Trading** keys (not live trading)
+               - Keys should start with `PK` (paper) or `AK` (live)
+            
+            3. **Keys Not Loaded** - Restart Streamlit after adding keys:
+               - Stop Streamlit (Ctrl+C)
+               - Start again: `streamlit run app.py`
+            
+            4. **Wrong Environment** - Make sure keys are in the correct `.env` file:
+               - File location: `hedge-fund-scanner/.env`
+               - Not in `NewsAdmin/.env.local`
+            """)
+        else:
+            st.error(f"**Error:** {trader_error}")
+            st.markdown("""
+            **To enable Autonomous Trading:**
+            
+            1. **Get Alpaca Paper Trading Account** (Free):
+               - Sign up at: https://alpaca.markets/
+               - Enable Paper Trading in dashboard
+            
+            2. **Get Your API Keys:**
+               - Go to: https://app.alpaca.markets/paper/dashboard/overview
+               - Click "Generate API Key"
+               - Copy your **API Key ID** and **Secret Key**
+            
+            3. **Add to `.env` file:**
+               ```
+               ALPACA_API_KEY=PKxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+               ALPACA_SECRET_KEY=your_secret_key_here
+               ```
+            
+            4. **Restart Streamlit:**
+               - Stop Streamlit (Ctrl+C)
+               - Run: `streamlit run app.py`
+            
+            **Note:** Paper trading uses fake money - perfect for testing!
+            """)
     else:
         # Trading status
         try:
@@ -869,7 +1031,38 @@ with tab3:
                 st.info("No lessons learned yet. AI will learn from completed trades.")
         
         except Exception as e:
-            st.error(f"Error loading trader data: {e}")
+            # Provide helpful error message for Alpaca authentication issues
+            error_str = str(e)
+            if "unauthorized" in error_str.lower() or "401" in error_str:
+                st.error("🔐 **Alpaca API Authentication Error**")
+                st.markdown("""
+                **The Alpaca API returned "unauthorized". This means:**
+                
+                1. **Missing API Keys** - Add to your `.env` file:
+                   ```
+                   ALPACA_API_KEY=your_paper_trading_key_here
+                   ALPACA_SECRET_KEY=your_paper_trading_secret_here
+                   ```
+                
+                2. **Incorrect API Keys** - Verify your keys are correct:
+                   - Get keys from: https://app.alpaca.markets/paper/dashboard/overview
+                   - Make sure you're using **Paper Trading** keys (not live trading)
+                   - Keys should start with `PK` (paper) or `AK` (live)
+                
+                3. **Keys Not Loaded** - Restart Streamlit after adding keys:
+                   - Stop Streamlit (Ctrl+C)
+                   - Start again: `streamlit run app.py`
+                
+                4. **Wrong Environment** - Make sure keys are in the correct `.env` file:
+                   - File location: `hedge-fund-scanner/.env`
+                   - Not in `NewsAdmin/.env.local`
+                
+                **Note:** The Autonomous Trading System requires Alpaca paper trading account.
+                You can get a free paper trading account at: https://alpaca.markets/
+                """)
+            else:
+                st.error(f"**Error loading trader data:** {error_str}")
+                st.info("💡 This feature requires Alpaca API keys. Add `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` to your `.env` file.")
 
 # ============ TAB 4: BACKTESTING ============
 with tab4:

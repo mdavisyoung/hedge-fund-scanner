@@ -114,12 +114,13 @@ class StockAnalyzer:
                 print(f"[Warning] Could not get quote for {ticker}")
                 return result  # Can't proceed without price
 
-            # Step 2: Get company details (market cap, exchange, name)
+            # Step 2: Get company details (market cap, exchange, name, description)
             details = self.polygon.get_stock_details(ticker)
             if details:
                 result['market_cap'] = details['market_cap']
                 result['exchange'] = details['primary_exchange']
                 result['name'] = details.get('name', ticker)
+                result['description'] = details.get('description', '')  # Company business description
                 result['quote_type'] = details.get('type', 'EQUITY')
                 result['market'] = details.get('market', 'stocks')
                 
@@ -238,6 +239,10 @@ class StockAnalyzer:
 
 
 class XAIStrategyGenerator:
+    """
+    Buffett-Style Value Investing Strategy Generator
+    Philosophy: Buy wonderful businesses at fair prices and hold forever
+    """
     def __init__(self):
         api_key_raw = os.getenv("XAI_API_KEY", "").strip()
         # Remove any whitespace, newlines, or quotes that might have been accidentally included
@@ -246,7 +251,15 @@ class XAIStrategyGenerator:
         # Use grok-3 for strong reasoning and general capabilities
         self.model_name = os.getenv("XAI_MODEL", "grok-3")  # Default to grok-3
         
-        self.system_prompt = """You are an expert hedge fund strategist combining Warren Buffett (value investing), Ray Dalio (risk parity), and Jim Simons (quantitative analysis).
+        # NEW BUFFETT-STYLE SYSTEM PROMPT
+        self.system_prompt = """You are Warren Buffett's investment partner, helping build long-term wealth through patient ownership of wonderful American businesses.
+
+CORE PHILOSOPHY:
+• We buy BUSINESSES, not stocks (think like owners, not traders)
+• Our holding period is FOREVER (10+ years minimum)
+• We LOVE market declines (quality businesses on sale)
+• Keep 80% of capital ALWAYS invested (can rotate, but stay invested)
+• Extremely low turnover: 2-10% annually (like Buffett)
 
 ANALYSIS FRAMEWORK:
 1. Stock Classification:
@@ -277,6 +290,9 @@ Provide a CLEAR, STRUCTURED analysis with these sections:
 
 **RECOMMENDATION:** [BUY/HOLD/AVOID] - [One sentence summary]
 
+**COMPANY OVERVIEW:**
+- Business Description: [REQUIRED - Explain what the company does, their products/services, business model, and industry position. This section MUST be included in every response. Use the Business Description provided in the stock information, or if not available, describe what companies in this sector/industry typically do.]
+
 **ANALYSIS:**
 - Stock Type: [Growth/Value/Financial/Cyclical]
 - Key Strengths: [2-3 bullet points]
@@ -297,21 +313,22 @@ Provide a CLEAR, STRUCTURED analysis with these sections:
 Use clear numbers, proper calculations, and simple language. Format with markdown headers and bullet points for easy reading."""
     
     def generate_strategy(self, stock_data: Dict, user_prefs: Dict) -> str:
+        """Generate Buffett-style long-term investment strategy"""
+        
         if not self.api_key:
             return "⚠️ XAI API key not configured. Add XAI_API_KEY to .env file."
         
-        # Check for placeholder values
-        if "your_xai" in self.api_key.lower() or "placeholder" in self.api_key.lower() or len(self.api_key) < 30:
-            return f"⚠️ **API key not set correctly!**\n\nYour .env file appears to have a placeholder value.\n\n**Please update your `.env` file with your actual xAI API key:**\n\n1. Get your API key from: https://console.x.ai\n2. Open `.env` file in the project root\n3. Replace the placeholder with:\n   ```\n   XAI_API_KEY=xai-your_actual_key_here\n   ```\n4. Make sure it's all on ONE line (no line breaks)\n5. Restart Streamlit\n\nCurrent key length: {len(self.api_key)} characters (should be 50+ characters)"
+        if "your_xai" in self.api_key.lower() or len(self.api_key) < 30:
+            return f"⚠️ **API key not set correctly!**\n\nPlease update `.env` with your actual xAI API key from https://console.x.ai"
         
-        # Verify API key format (should start with xai- and be reasonable length)
         if not self.api_key.startswith("xai-") or len(self.api_key) < 50:
-            return f"⚠️ Invalid API key format. Key should start with 'xai-' and be at least 50 characters long.\n\nCurrent key length: {len(self.api_key)} characters\nFirst 10 chars: {self.api_key[:10]}\n\nPlease check your `.env` file and ensure XAI_API_KEY is set correctly."
+            return f"⚠️ Invalid API key format. Key should start with 'xai-' and be 50+ characters."
         
-        # Extract data from evaluation object structure
+        # Extract data
         fundamentals = stock_data.get('fundamentals', {})
         ticker = fundamentals.get('ticker', 'Unknown')
         stock_name = fundamentals.get('name', ticker)
+        company_description = fundamentals.get('description', '')
         stock_type = stock_data.get('stock_type', 'Unknown')
         current_price = fundamentals.get('current_price', 0)
         pe_ratio = fundamentals.get('pe_ratio', 0)
@@ -319,98 +336,137 @@ Use clear numbers, proper calculations, and simple language. Format with markdow
         roe = fundamentals.get('roe', 0)
         debt_to_equity = fundamentals.get('debt_to_equity', 0)
         current_ratio = fundamentals.get('current_ratio', 0)
-        beta = fundamentals.get('beta', 1.0)
+        profit_margin = fundamentals.get('profit_margin', 0)
         market_cap = fundamentals.get('market_cap', 0)
+        sector = fundamentals.get('sector', 'Unknown')
+        industry = fundamentals.get('industry', 'Unknown')
         
         monthly_budget = user_prefs.get('monthly_contribution', 100)
-        risk_tolerance = user_prefs.get('risk_tolerance', 5)
-        max_loss_pct = user_prefs.get('max_loss_per_trade', 2)
-        
-        # Get actual portfolio value if available, otherwise estimate
         portfolio_value = user_prefs.get('portfolio_value', monthly_budget * 12)
-        
-        # Calculate position sizing for context
-        stop_loss_pct = 10.0  # Default 10% stop-loss
-        max_loss_amount = portfolio_value * (max_loss_pct / 100)
-        stop_loss_distance = current_price * (stop_loss_pct / 100)
-        shares_by_risk = max_loss_amount / stop_loss_distance if stop_loss_distance > 0 else 0
         
         # Calculate DCA parameters
         shares_monthly = monthly_budget / current_price if current_price > 0 else 0
-        months_to_build = 12
-        target_shares = shares_monthly * months_to_build
-        target_value = target_shares * current_price
+        target_shares_12mo = shares_monthly * 12
+        target_value_12mo = target_shares_12mo * current_price
+        position_pct = (target_value_12mo / portfolio_value * 100) if portfolio_value > 0 else 0
         
-        prompt = f"""Analyze this stock and provide an investment strategy WITH DOLLAR-COST AVERAGING PLAN:
+        # Build comprehensive prompt focused on BUSINESS QUALITY
+        prompt = f"""Analyze this business for LONG-TERM OWNERSHIP (10+ years) using Buffett's framework:
 
-STOCK INFORMATION:
-- Ticker: {ticker}
-- Company: {stock_name}
-- Stock Type: {stock_type}
-- Current Price: ${current_price:.2f}
-- Market Cap: ${market_cap:,.0f} (if available)
+═══════════════════════════════════════════════════════
+📊 BUSINESS OVERVIEW
+═══════════════════════════════════════════════════════
 
-KEY METRICS:
-- P/E Ratio: {pe_ratio:.2f}
-- Revenue Growth: {revenue_growth:.2f}%
-- Return on Equity (ROE): {roe:.2f}%
-- Debt-to-Equity: {debt_to_equity:.2f}
-- Current Ratio: {current_ratio:.2f}
-- Beta: {beta:.2f}
+Company: {stock_name} ({ticker})
+Sector: {sector}
+Industry: {industry}
 
-INVESTOR PROFILE:
-- Portfolio Value: ${portfolio_value:,.2f} (cash + current positions)
-- Monthly Investment Budget: ${monthly_budget:.2f}
-- Risk Tolerance: {risk_tolerance}/10 (1=Conservative, 10=Aggressive)
-- Maximum Loss Per Trade: {max_loss_pct}% of portfolio
+What They Do (REQUIRED - Expand on this):
+{company_description if company_description else f"{stock_name} operates in the {industry} industry. Research and describe their business model, products/services, customers, and competitive position."}
 
-DCA CALCULATIONS (Use these exact numbers):
-- Shares per Month: {shares_monthly:.2f} shares (${monthly_budget:.2f} ÷ ${current_price:.2f})
-- Monthly Investment: ${monthly_budget:.2f}
-- Target after 12 months: {target_shares:.2f} shares (${target_value:,.2f})
-- Maximum Loss Amount: ${max_loss_amount:.2f} ({max_loss_pct}% of portfolio)
+Current Price: ${current_price:.2f}
+Market Cap: ${market_cap/1e9:.2f}B
 
-REQUIRED FORMAT:
+═══════════════════════════════════════════════════════
+💰 FINANCIAL FUNDAMENTALS
+═══════════════════════════════════════════════════════
 
-**RECOMMENDATION:** [BUY/HOLD/AVOID] - [One sentence summary]
+Profitability:
+• ROE: {roe:.1f}% (Is this sustainable? 15%+ is quality)
+• Profit Margin: {profit_margin:.1f}% (Pricing power?)
+• Revenue Growth: {revenue_growth:.1f}% (Sustainable?)
 
-**ANALYSIS:**
-- Stock Type: {stock_type}
-- Key Strengths: [2-3 bullet points based on metrics above]
-- Key Concerns: [1-2 bullet points based on metrics above]
+Valuation:
+• P/E Ratio: {pe_ratio:.1f}x (Reasonable for quality?)
+• Price/Book: {fundamentals.get('price_to_book', 0):.2f}x
 
-**IMMEDIATE ACTION (This Month):**
-- Buy {shares_monthly:.2f} shares @ ${current_price:.2f} = ${monthly_budget:.2f}
-- This uses this month's ${monthly_budget:.2f} DCA budget
-- Stop-Loss: ${current_price * 0.90:.2f} (-10%)
-- Take-Profit: ${current_price * 1.20:.2f} (+20%)
+Financial Strength:
+• Debt/Equity: {debt_to_equity:.2f} (<1.0 is conservative)
+• Current Ratio: {current_ratio:.2f} (>1.5 is strong)
 
-**DOLLAR-COST AVERAGING PLAN (Next 12 Months):**
-Month 1: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {shares_monthly:.2f} shares
-Month 2: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {shares_monthly * 2:.2f} shares
-Month 3: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {shares_monthly * 3:.2f} shares
-Month 6: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {shares_monthly * 6:.2f} shares
-Month 12: Buy {shares_monthly:.2f} shares (${monthly_budget:.2f}) → Total: {target_shares:.2f} shares
+═══════════════════════════════════════════════════════
+🎯 INVESTOR CONTEXT
+═══════════════════════════════════════════════════════
 
-**TARGET POSITION (After 12 Months):**
-- Total Shares: {target_shares:.2f}
-- Total Invested: ${monthly_budget * 12:,.2f}
-- Position Value: ${target_value:,.2f} (at current price)
-- Portfolio Allocation: {(target_value / portfolio_value * 100) if portfolio_value > 0 else 0:.1f}% of portfolio
+Portfolio Size: ${portfolio_value:,.2f}
+Monthly Budget: ${monthly_budget:.2f}
+Investment Horizon: 10-30 years
+Goal: Build to $300-500K/year passive income
 
-**RISK MANAGEMENT:**
-- Exit if price drops to ${current_price * 0.90:.2f} (stop-loss)
-- Take profit at ${current_price * 1.20:.2f} (+20% gain)
-- Max risk: ${max_loss_amount:.2f} ({max_loss_pct}% of portfolio)
+Philosophy:
+• Buy businesses, not stocks
+• Hold forever (unless thesis breaks)
+• Love market declines (buying opportunities)
+• Keep 80% invested always
+• Let compounding work over decades
 
-CRITICAL REQUIREMENTS:
-1. MUST include exact DCA plan showing monthly purchases
-2. MUST show "Buy {shares_monthly:.2f} shares this month" as immediate action
-3. MUST calculate total shares after 12 months
-4. MUST show position value at current price
-5. Use the calculations provided above - DO NOT recalculate
-6. Format with markdown headers and bullet points
-7. Be specific with numbers - no vague recommendations"""
+═══════════════════════════════════════════════════════
+📈 DCA PARAMETERS (Use these exact numbers)
+═══════════════════════════════════════════════════════
+
+Shares per Month: {shares_monthly:.3f} shares
+Monthly Investment: ${monthly_budget:.2f}
+Target after 12 months: {target_shares_12mo:.2f} shares
+Value after 12 months: ${target_value_12mo:,.2f}
+% of Portfolio: {position_pct:.1f}%
+
+═══════════════════════════════════════════════════════
+🔍 BUFFETT-STYLE ANALYSIS REQUIRED
+═══════════════════════════════════════════════════════
+
+Answer these critical questions:
+
+1. MOAT ASSESSMENT:
+   - What protects this business from competition?
+   - Will they have pricing power in 10 years?
+   - Can competitors easily replicate this?
+   - Rate the moat: Strong/Moderate/Weak
+
+2. MANAGEMENT QUALITY:
+   - Do they allocate capital wisely?
+   - Are they honest with shareholders?
+   - Do insiders own meaningful shares?
+   - Will they create value over 10+ years?
+
+3. PREDICTABILITY:
+   - Can we predict cash flows 5-10 years out?
+   - Is the business model simple and understandable?
+   - What could make this business obsolete?
+   - Is this a "forever" hold candidate?
+
+4. VALUATION:
+   - Are we paying a fair price for this quality?
+   - What's a reasonable intrinsic value?
+   - Margin of safety at ${current_price:.2f}?
+   - Would Buffett buy this at this price?
+
+5. PORTFOLIO FIT:
+   - Does this complement existing holdings?
+   - Helps achieve $300-500K/year goal how?
+   - Worth {position_pct:.1f}% of portfolio?
+
+═══════════════════════════════════════════════════════
+💡 OUTPUT REQUIRED
+═══════════════════════════════════════════════════════
+
+Provide your analysis in the EXACT format specified in the system prompt:
+1. Business Quality Assessment (with ⭐ moat rating)
+2. Valuation (intrinsic value estimate)
+3. Recommendation (BUY/HOLD/AVOID with conviction level)
+4. 12-Month DCA Plan (month-by-month schedule)
+5. Exit Criteria (specific conditions, NOT stop-losses)
+6. Behavioral Reminder (encourage patience)
+
+Remember:
+• Focus on BUSINESS quality, not stock price
+• Think 10+ YEARS out
+• Welcome market DECLINES
+• Build positions over TIME (DCA)
+• Sell RARELY (only if thesis breaks)
+
+"The money is out there - ${monthly_budget}/month for 20 years at 12% = $2.4M. This business can help us get there IF it's wonderful and we hold forever."
+
+═══════════════════════════════════════════════════════"""
         
         try:
             response = requests.post(
@@ -426,24 +482,47 @@ CRITICAL REQUIREMENTS:
                         {"role": "user", "content": prompt}
                     ],
                     "temperature": 0.7,
-                    "max_tokens": 2000
+                    "max_tokens": 3000  # Increased for comprehensive analysis
                 },
-                timeout=30
+                timeout=45
             )
             
             if response.status_code == 200:
-                return response.json()["choices"][0]["message"]["content"]
+                analysis = response.json()["choices"][0]["message"]["content"]
+                
+                # Add philosophy reminder at the end
+                philosophy_footer = """
+
+---
+
+### 🎯 BUFFETT'S WISDOM
+
+> *"The stock market is a device for transferring money from the impatient to the patient."*
+
+**Our Edge:** We think in decades while others think in days.
+
+**Remember:**
+- The economy is worth trillions
+- People are making more money than ever  
+- We only need our small share: $300-500K/year
+- **The money IS out there**
+
+Keep 80% invested. Hold forever. Let compounding work. 🚀
+
+---
+"""
+                return analysis + philosophy_footer
+                
             else:
-                # Get detailed error message from API response
                 try:
                     error_data = response.json()
                     error_msg = error_data.get("error", {}).get("message", response.text)
-                    error_type = error_data.get("error", {}).get("type", "Unknown")
-                    return f"⚠️ API Error {response.status_code}: {error_type}\n\n{error_msg}"
+                    return f"⚠️ API Error: {error_msg}"
                 except:
-                    return f"⚠️ API Error: {response.status_code}\n\nResponse: {response.text[:500]}"
+                    return f"⚠️ API Error {response.status_code}: {response.text[:500]}"
+                    
         except Exception as e:
-            return f"⚠️ Error: {str(e)}"
+            return f"⚠️ Error generating strategy: {str(e)}"
 
 
 class PortfolioSimulator:
@@ -839,3 +918,432 @@ class AIPortfolioManager:
         
         portfolio["last_managed"] = datetime.now().isoformat()
         return portfolio, activity_log
+# BUFFETT-STYLE PORTFOLIO MANAGER
+# Updated AIPortfolioManager with 80% deployment rule and buy-and-hold philosophy
+
+class BuffettPortfolioManager:
+    """
+    Automated portfolio manager following Buffett's philosophy:
+    - Keep 80% deployed in quality businesses
+    - Hold forever unless thesis breaks
+    - Love market declines (buy more)
+    - Extremely low turnover (2-10% annually)
+    """
+    
+    def __init__(self, storage_manager=None):
+        self.storage = storage_manager
+        self.analyzer = StockAnalyzer()
+        self.strategy_gen = XAIStrategyGenerator()
+        
+    def initialize_portfolio(self, initial_cash: float = 100.0, monthly_contribution: float = 100.0):
+        """Initialize new Buffett-style portfolio"""
+        from datetime import datetime
+        
+        portfolio = {
+            "philosophy": "Buffett Buy-and-Hold",
+            "target_deployment": 80,  # Keep 80% invested
+            "initial_cash": initial_cash,
+            "monthly_contribution": monthly_contribution,
+            "current_cash": initial_cash,
+            "total_contributed": initial_cash,
+            "positions": {},
+            "trade_history": [],
+            "watchlist": {},  # Businesses we want to own
+            "created_at": datetime.now().isoformat(),
+            "last_contribution_date": datetime.now().isoformat(),
+            "settings": {
+                "max_position_size_pct": 20.0,  # Max 20% at cost
+                "allow_concentration": 25.0,  # Can grow to 25% through appreciation
+                "min_position_size_pct": 5.0,  # Meaningful positions only
+                "target_holdings": 10,  # 8-15 quality businesses
+                "max_holdings": 15,
+                "portfolio_turnover_target": 10,  # <10% annual turnover
+                "hold_period_min_years": 10,  # Think 10+ years
+                "rebalance_threshold": 30,  # Trim if position grows >30%
+            }
+        }
+        return portfolio
+    
+    def get_portfolio_metrics(self, portfolio: Dict) -> Dict:
+        """Calculate portfolio metrics with deployment percentage"""
+        cash = portfolio.get("current_cash", 0)
+        positions = portfolio.get("positions", {})
+        
+        # Calculate position values
+        total_position_value = 0
+        for ticker, position in positions.items():
+            try:
+                current_price = self.analyzer.get_fundamentals(ticker).get("current_price", 0)
+                shares = position.get("shares", 0)
+                total_position_value += current_price * shares
+            except:
+                # Use entry price if can't get current
+                total_position_value += position.get("entry_price", 0) * position.get("shares", 0)
+        
+        total_value = cash + total_position_value
+        
+        # Deployment metrics
+        deployed_pct = (total_position_value / total_value * 100) if total_value > 0 else 0
+        target_deployment = portfolio.get("target_deployment", 80)
+        deployment_gap = deployed_pct - target_deployment
+        
+        # Position count
+        num_positions = len(positions)
+        target_holdings = portfolio.get("settings", {}).get("target_holdings", 10)
+        
+        return {
+            "total_value": total_value,
+            "cash": cash,
+            "cash_pct": (cash / total_value * 100) if total_value > 0 else 0,
+            "total_position_value": total_position_value,
+            "deployed_pct": deployed_pct,
+            "target_deployment": target_deployment,
+            "deployment_gap": deployment_gap,
+            "num_positions": num_positions,
+            "target_holdings": target_holdings,
+            "is_properly_deployed": abs(deployment_gap) < 10,  # Within 10% of target
+        }
+    
+    def should_buy_more(self, portfolio: Dict) -> Tuple[bool, str]:
+        """Determine if we should be buying (staying at 80% deployment)"""
+        metrics = self.get_portfolio_metrics(portfolio)
+        
+        # Check deployment level
+        if metrics["deployed_pct"] < metrics["target_deployment"] - 5:
+            gap = metrics["target_deployment"] - metrics["deployed_pct"]
+            return True, f"Under-deployed by {gap:.1f}% - should be buying"
+        
+        # Check if we need more holdings
+        if metrics["num_positions"] < metrics["target_holdings"]:
+            needed = metrics["target_holdings"] - metrics["num_positions"]
+            return True, f"Only {metrics['num_positions']} holdings - target is {metrics['target_holdings']}"
+        
+        # Check if we have monthly contribution to deploy
+        cash_pct = metrics["cash_pct"]
+        if cash_pct > 20:  # More than 20% in cash
+            return True, f"Too much cash ({cash_pct:.1f}%) - should deploy"
+        
+        return False, "Portfolio properly deployed"
+    
+    def evaluate_business_quality(self, ticker: str) -> Dict:
+        """Evaluate if this is a quality business worth owning forever"""
+        evaluation = self.analyzer.evaluate_stock(ticker)
+        
+        if "error" in evaluation:
+            return {"is_quality": False, "reason": evaluation["error"]}
+        
+        fundamentals = evaluation["fundamentals"]
+        
+        # Buffett's quality checklist
+        quality_checks = {
+            "high_roe": fundamentals.get("roe", 0) >= 15,  # High returns on equity
+            "profitable": fundamentals.get("profit_margin", 0) > 10,  # Strong margins
+            "low_debt": fundamentals.get("debt_to_equity", 999) < 1.0,  # Conservative debt
+            "strong_liquidity": fundamentals.get("current_ratio", 0) > 1.5,  # Financial strength
+            "reasonable_valuation": 0 < fundamentals.get("pe_ratio", 0) < 30,  # Not crazy expensive
+        }
+        
+        quality_score = sum(quality_checks.values())
+        max_score = len(quality_checks)
+        
+        # Need at least 4/5 quality criteria
+        is_quality = quality_score >= 4
+        
+        return {
+            "is_quality": is_quality,
+            "quality_score": quality_score,
+            "max_score": max_score,
+            "checks": quality_checks,
+            "evaluation": evaluation,
+            "reason": f"Quality score: {quality_score}/{max_score}"
+        }
+    
+    def calculate_dca_amount(self, portfolio: Dict, ticker: str) -> float:
+        """Calculate how much to invest this month via DCA"""
+        monthly_budget = portfolio.get("monthly_contribution", 100)
+        metrics = self.get_portfolio_metrics(portfolio)
+        
+        # Check if we're properly deployed
+        deployment_gap = metrics["deployment_gap"]
+        
+        # If under-deployed, allocate more aggressively
+        if deployment_gap < -10:  # More than 10% under target
+            return monthly_budget * 1.5  # Buy 50% more
+        elif deployment_gap < -5:
+            return monthly_budget * 1.2  # Buy 20% more
+        else:
+            return monthly_budget  # Normal DCA
+    
+    def execute_dca_buy(self, portfolio: Dict, ticker: str, amount: float) -> Dict:
+        """Execute dollar-cost averaging purchase"""
+        from datetime import datetime
+        
+        try:
+            fundamentals = self.analyzer.get_fundamentals(ticker)
+            current_price = fundamentals.get("current_price", 0)
+            
+            if current_price <= 0:
+                return {"success": False, "error": "Invalid price"}
+            
+            shares = amount / current_price
+            cost = shares * current_price
+            
+            if cost > portfolio.get("current_cash", 0):
+                return {"success": False, "error": "Insufficient cash"}
+            
+            # Add to existing position or create new
+            if ticker in portfolio["positions"]:
+                position = portfolio["positions"][ticker]
+                
+                # Calculate new average entry price
+                old_shares = position["shares"]
+                old_cost = old_shares * position["entry_price"]
+                new_shares = old_shares + shares
+                new_avg_price = (old_cost + cost) / new_shares
+                
+                position["shares"] = new_shares
+                position["entry_price"] = new_avg_price
+                position["last_purchase"] = datetime.now().isoformat()
+                position["purchase_count"] = position.get("purchase_count", 1) + 1
+                
+            else:
+                # New position
+                quality_eval = self.evaluate_business_quality(ticker)
+                
+                position = {
+                    "shares": shares,
+                    "entry_price": current_price,
+                    "entry_date": datetime.now().isoformat(),
+                    "last_purchase": datetime.now().isoformat(),
+                    "purchase_count": 1,
+                    "stock_type": quality_eval["evaluation"].get("stock_type", "Unknown"),
+                    "quality_score": quality_eval["quality_score"],
+                    "thesis": f"Quality business with {quality_eval['quality_score']}/5 criteria",
+                    "hold_forever": True,  # Default assumption
+                    "exit_only_if": [
+                        "Moat deteriorates",
+                        "Significantly overvalued (P/E >50)",
+                        "Better opportunity exists",
+                        "Position >25% of portfolio"
+                    ]
+                }
+                portfolio["positions"][ticker] = position
+            
+            # Deduct cash
+            portfolio["current_cash"] -= cost
+            
+            # Record trade
+            trade = {
+                "ticker": ticker,
+                "action": "BUY (DCA)",
+                "shares": shares,
+                "price": current_price,
+                "total_cost": cost,
+                "timestamp": datetime.now().isoformat(),
+                "reason": "Dollar-cost averaging - building long-term position"
+            }
+            portfolio["trade_history"].append(trade)
+            
+            return {
+                "success": True,
+                "shares": shares,
+                "price": current_price,
+                "cost": cost,
+                "total_shares": portfolio["positions"][ticker]["shares"],
+                "avg_price": portfolio["positions"][ticker]["entry_price"]
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def check_sell_conditions(self, portfolio: Dict, ticker: str) -> Dict:
+        """Check if we should sell (RARE - only if thesis breaks)"""
+        position = portfolio.get("positions", {}).get(ticker)
+        if not position:
+            return {"should_sell": False}
+        
+        try:
+            # Re-evaluate business quality
+            quality_eval = self.evaluate_business_quality(ticker)
+            original_quality = position.get("quality_score", 5)
+            current_quality = quality_eval.get("quality_score", 0)
+            
+            # Get current metrics
+            fundamentals = self.analyzer.get_fundamentals(ticker)
+            current_price = fundamentals.get("current_price", 0)
+            pe_ratio = fundamentals.get("pe_ratio", 0)
+            
+            # Calculate position size
+            portfolio_value = self.get_portfolio_metrics(portfolio)["total_value"]
+            position_value = current_price * position["shares"]
+            position_pct = (position_value / portfolio_value * 100) if portfolio_value > 0 else 0
+            
+            # Sell Condition 1: Fundamentals deteriorated significantly
+            if current_quality < 3 and current_quality < original_quality:
+                return {
+                    "should_sell": True,
+                    "reason": "Fundamentals deteriorated",
+                    "sell_price": current_price,
+                    "details": f"Quality dropped from {original_quality}/5 to {current_quality}/5"
+                }
+            
+            # Sell Condition 2: Extremely overvalued
+            if pe_ratio > 60 and not quality_eval.get("is_quality", False):
+                return {
+                    "should_sell": True,
+                    "reason": "Significantly overvalued",
+                    "sell_price": current_price,
+                    "details": f"P/E of {pe_ratio:.1f} is excessive"
+                }
+            
+            # Sell Condition 3: Concentration risk
+            max_position = portfolio.get("settings", {}).get("allow_concentration", 25)
+            if position_pct > max_position:
+                # Trim, don't exit completely
+                return {
+                    "should_sell": "TRIM",
+                    "reason": "Concentration risk management",
+                    "sell_price": current_price,
+                    "trim_to_pct": 20,  # Trim back to 20%
+                    "details": f"Position is {position_pct:.1f}% of portfolio"
+                }
+            
+            # OTHERWISE: HOLD FOREVER
+            return {"should_sell": False, "reason": "Business remains quality - HOLD"}
+            
+        except Exception as e:
+            return {"should_sell": False, "error": str(e)}
+    
+    def auto_manage_portfolio(self, portfolio: Dict, watchlist_tickers: List[str] = None) -> Tuple[Dict, List[str]]:
+        """
+        Manage portfolio with Buffett philosophy:
+        1. Add monthly contribution
+        2. Check if we should sell anything (RARE)
+        3. Buy to maintain 80% deployment
+        4. Build positions via DCA
+        """
+        from datetime import datetime
+        
+        activity_log = []
+        
+        # Step 1: Add monthly contribution
+        old_contrib = portfolio.get("total_contributed", 0)
+        portfolio = self.add_monthly_contribution(portfolio)
+        new_contrib = portfolio.get("total_contributed", 0)
+        
+        if new_contrib > old_contrib:
+            amount = new_contrib - old_contrib
+            activity_log.append(f"✅ Monthly contribution: +${amount:.2f}")
+        
+        # Step 2: Check sell conditions (RARE)
+        for ticker in list(portfolio.get("positions", {}).keys()):
+            sell_check = self.check_sell_conditions(portfolio, ticker)
+            
+            if sell_check.get("should_sell") == "TRIM":
+                # Trim for concentration risk
+                activity_log.append(f"⚖️ {ticker} too large - trimming to 20% of portfolio")
+                # TODO: Implement trim logic
+                
+            elif sell_check.get("should_sell"):
+                # Full exit - thesis broken
+                reason = sell_check.get("reason", "Unknown")
+                activity_log.append(f"🔴 SELL {ticker}: {reason}")
+                activity_log.append(f"   Thesis broken after {self._holding_period(portfolio, ticker)} years")
+                # TODO: Implement sell logic
+        
+        # Step 3: Check deployment level
+        metrics = self.get_portfolio_metrics(portfolio)
+        activity_log.append(f"📊 Portfolio: ${metrics['total_value']:,.2f} | Deployed: {metrics['deployed_pct']:.1f}% (target: {metrics['target_deployment']}%)")
+        
+        should_buy, buy_reason = self.should_buy_more(portfolio)
+        
+        if should_buy:
+            activity_log.append(f"🎯 {buy_reason}")
+            
+            # Step 4: Execute DCA purchases
+            if watchlist_tickers:
+                # Evaluate each watchlist ticker
+                for ticker in watchlist_tickers[:3]:  # Top 3 opportunities
+                    
+                    # Check if already holding
+                    if ticker in portfolio.get("positions", {}):
+                        # Continue DCA into existing position
+                        dca_amount = self.calculate_dca_amount(portfolio, ticker)
+                        
+                        if dca_amount <= portfolio.get("current_cash", 0):
+                            buy_result = self.execute_dca_buy(portfolio, ticker, dca_amount)
+                            
+                            if buy_result.get("success"):
+                                activity_log.append(f"🟢 DCA into {ticker}: +{buy_result['shares']:.3f} shares @ ${buy_result['price']:.2f}")
+                                activity_log.append(f"   Total: {buy_result['total_shares']:.3f} shares @ avg ${buy_result['avg_price']:.2f}")
+                    
+                    else:
+                        # Evaluate new business
+                        quality_eval = self.evaluate_business_quality(ticker)
+                        
+                        if quality_eval.get("is_quality"):
+                            dca_amount = self.calculate_dca_amount(portfolio, ticker)
+                            
+                            if dca_amount <= portfolio.get("current_cash", 0):
+                                buy_result = self.execute_dca_buy(portfolio, ticker, dca_amount)
+                                
+                                if buy_result.get("success"):
+                                    activity_log.append(f"🟢 NEW POSITION: {ticker}")
+                                    activity_log.append(f"   Quality Score: {quality_eval['quality_score']}/5")
+                                    activity_log.append(f"   Bought {buy_result['shares']:.3f} shares @ ${buy_result['price']:.2f}")
+                                    activity_log.append(f"   Plan: DCA over 12-24 months")
+                                    break  # Start with one new position
+                        else:
+                            activity_log.append(f"⏸️ {ticker}: {quality_eval.get('reason')}")
+            
+            else:
+                activity_log.append("ℹ️ No watchlist provided - add quality businesses to deploy capital")
+        
+        else:
+            activity_log.append("✅ Portfolio properly deployed - maintain holdings")
+        
+        # Summary
+        activity_log.append("")
+        activity_log.append("═" * 60)
+        activity_log.append(f"💼 Holdings: {metrics['num_positions']} businesses")
+        activity_log.append(f"💰 Cash: ${metrics['cash']:,.2f} ({metrics['cash_pct']:.1f}%)")
+        activity_log.append(f"📈 Invested: ${metrics['total_position_value']:,.2f} ({metrics['deployed_pct']:.1f}%)")
+        activity_log.append(f"🎯 Target Deployment: {metrics['target_deployment']}%")
+        activity_log.append("═" * 60)
+        
+        portfolio["last_managed"] = datetime.now().isoformat()
+        return portfolio, activity_log
+    
+    def add_monthly_contribution(self, portfolio: Dict) -> Dict:
+        """Add monthly contribution if a month has passed"""
+        from datetime import datetime, timedelta
+        
+        last_contrib = datetime.fromisoformat(portfolio.get("last_contribution_date", datetime.now().isoformat()))
+        now = datetime.now()
+        
+        if (now - last_contrib).days >= 30:
+            monthly_amount = portfolio.get("monthly_contribution", 100.0)
+            portfolio["current_cash"] += monthly_amount
+            portfolio["total_contributed"] += monthly_amount
+            portfolio["last_contribution_date"] = now.isoformat()
+        
+        return portfolio
+    
+    def _holding_period(self, portfolio: Dict, ticker: str) -> float:
+        """Calculate holding period in years"""
+        from datetime import datetime
+        
+        position = portfolio.get("positions", {}).get(ticker)
+        if not position:
+            return 0
+        
+        entry_date = datetime.fromisoformat(position.get("entry_date", datetime.now().isoformat()))
+        now = datetime.now()
+        days = (now - entry_date).days
+        return days / 365.25
+
+
+# Usage example:
+# manager = BuffettPortfolioManager()
+# portfolio = manager.initialize_portfolio(initial_cash=1000, monthly_contribution=500)
+# portfolio, activity = manager.auto_manage_portfolio(portfolio, watchlist_tickers=['AAPL', 'MSFT', 'GOOGL'])
