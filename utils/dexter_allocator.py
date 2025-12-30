@@ -1,12 +1,18 @@
 """
 Dexter-Managed Monthly Allocation System
 AI Portfolio Manager: Dexter decides how to invest $100/month
+UPDATED: Now using Native Python Dexter (no Node.js required!)
 """
 
 import sys
 sys.path.insert(0, 'utils')
 
-from dexter_client import DexterClient
+# UPDATED: Use native Python Dexter instead of Node.js client
+from pathlib import Path
+import os
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from dexter import create_dexter
+
 from portfolio_context import PortfolioContext
 from core import StockAnalyzer
 from datetime import datetime
@@ -16,7 +22,7 @@ import re
 
 class DexterAllocator:
     """
-    AI Portfolio Manager using Dexter
+    AI Portfolio Manager using Dexter (Native Python)
     - Researches opportunities monthly
     - Decides optimal allocation
     - Maintains 80% deployment
@@ -24,7 +30,8 @@ class DexterAllocator:
     """
     
     def __init__(self):
-        self.dexter = DexterClient()
+        # UPDATED: Use native Python Dexter
+        self.dexter = create_dexter()
         self.portfolio = PortfolioContext()
         self.analyzer = StockAnalyzer()
     
@@ -50,28 +57,30 @@ class DexterAllocator:
         query = self._build_allocation_query(context, budget)
         
         # Dexter researches and decides
-        print("🤖 Dexter is analyzing allocation opportunities...")
+        print("🤖 Dexter is analyzing allocation opportunities (Native Python)...")
         print(f"   Budget: ${budget:.2f}")
         print(f"   Current holdings: {len(context['holdings'])}")
         print(f"   Portfolio value: ${context['total_value']:,.2f}")
         
-        result = self.dexter.research(query, context)
-        
-        if 'error' in result:
+        try:
+            # UPDATED: Call native Python Dexter
+            result = self.dexter.research(query)
+            
+            # Parse Dexter's decision
+            decision = self._parse_decision(result.get('answer', ''), budget)
+            decision['raw_answer'] = result.get('answer', '')
+            decision['iterations'] = result.get('iterations', 0)
+            decision['tasks'] = len(result.get('plan', {}).get('tasks', []))
+            
+            return decision
+            
+        except Exception as e:
             return {
-                'error': result['error'],
-                'raw_answer': result.get('answer', ''),
+                'error': str(e),
+                'raw_answer': f"Error: {str(e)}",
                 'allocations': [],
                 'execute': False
             }
-        
-        # Parse Dexter's decision
-        decision = self._parse_decision(result.get('answer', ''), budget)
-        decision['raw_answer'] = result.get('answer', '')
-        decision['iterations'] = result.get('iterations', 0)
-        decision['tasks'] = len(result.get('plan', {}).get('tasks', []))
-        
-        return decision
     
     def _build_allocation_query(self, context: dict, budget: float) -> str:
         """Build comprehensive research query for Dexter"""
@@ -375,7 +384,7 @@ def run_monthly_allocation(budget: float = 100.0) -> dict:
 if __name__ == "__main__":
     # Test the allocator
     print("="*60)
-    print("DEXTER-MANAGED MONTHLY ALLOCATION TEST")
+    print("DEXTER-MANAGED MONTHLY ALLOCATION TEST (Native Python)")
     print("="*60)
     print()
     
