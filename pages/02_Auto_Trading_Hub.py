@@ -640,14 +640,14 @@ with tab2:
                     completed += 1
                     ticker = future_to_ticker[future]
                     
-                    progress = completed / min(len(stocks_to_scan), 50)
-                    progress_bar.progress(progress)
+                    progress_pct = completed / min(len(stocks_to_scan), 50)
+                    progress_bar.progress(progress_pct)
                     
                     current_stocks.append(ticker)
                     if len(current_stocks) > 5:
                         current_stocks.pop(0)
                     
-                    status_text.markdown(f"**Progress:** {completed}/{min(len(stocks_to_scan), 50)} ({progress*100:.1f}%) | Currently: {', '.join(current_stocks[-3:])}")
+                    status_text.markdown(f"**Progress:** {completed}/{min(len(stocks_to_scan), 50)} ({progress_pct*100:.1f}%) | Currently: {', '.join(current_stocks[-3:])}")
                     results_text = f"🔥 Hot: {len(results['hot'])} | 🟡 Warming: {len(results['warming'])} | 👀 Watching: {len(results['watching'])}"
                     results_container.markdown(f"**Results:** {results_text}")
                     
@@ -678,7 +678,8 @@ with tab2:
             storage.save_warming_stocks(results['warming'])
             storage.save_watching_stocks(results['watching'])
             
-            # Update progress
+            # Update progress (reload to ensure we have the dict, not the float)
+            progress = storage.load_scan_progress()
             progress['last_scan'] = datetime.now().isoformat()
             storage.save_scan_progress(progress)
             

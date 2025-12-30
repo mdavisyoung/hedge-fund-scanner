@@ -1,10 +1,27 @@
 import streamlit as st
+
+# IMPORTANT: st.set_page_config must be the FIRST Streamlit call
+st.set_page_config(
+    page_title="Personal Hedge Fund Manager",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 import os
+import sys
+import threading
+from pathlib import Path
 from dotenv import load_dotenv
 
+# Add utils to path for Dexter
+sys.path.insert(0, str(Path(__file__).parent / 'utils'))
+
+# Load environment variables (for local development)
+# Streamlit Cloud uses st.secrets instead
 try:
     load_dotenv()
 except UnicodeDecodeError:
@@ -20,18 +37,71 @@ except UnicodeDecodeError:
                 f_out.write(content_str)
         load_dotenv()
     except FileNotFoundError:
-        # .env file doesn't exist, that's okay
+        # .env file doesn't exist, that's okay (using Streamlit secrets)
         pass
     except Exception:
-        # If still fails, just skip loading .env
+        # If still fails, just skip loading .env (using Streamlit secrets)
         pass
 
-st.set_page_config(
-    page_title="Personal Hedge Fund Manager",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Set environment variables from Streamlit secrets (for cloud deployment)
+# This allows utils to access secrets via os.getenv()
+try:
+    if hasattr(st, 'secrets'):
+        # Map Streamlit secrets to environment variables
+        secret_keys = ['XAI_API_KEY', 'ALPACA_API_KEY', 'ALPACA_SECRET_KEY', 
+                      'POLYGON_API_KEY', 'SENDGRID_API_KEY', 'DEXTER_NEWSADMIN_PATH']
+        for key in secret_keys:
+            try:
+                if key in st.secrets:
+                    os.environ[key] = str(st.secrets[key])
+            except Exception:
+                pass
+except Exception:
+    # Not running on Streamlit Cloud, use .env file
+    pass
+
+# Auto-start Dexter service in background
+def _start_dexter_background():
+    """Start Dexter service in background thread"""
+    import time
+    try:
+        from dexter_manager import DexterManager
+        
+        manager = DexterManager()
+        if not manager.is_running():
+            # Start the service (non-blocking)
+            success, message = manager.start(wait_for_ready=False, timeout=0)
+            if success:
+                # Store manager in session state to keep process reference
+                st.session_state.dexter_manager = manager
+                st.session_state.dexter_started = True
+                st.session_state.dexter_start_message = "Starting Dexter..."
+                
+                # Wait a bit and check if it's ready (non-blocking check)
+                time.sleep(3)
+                if manager.is_running():
+                    st.session_state.dexter_start_message = "✅ Dexter is ready"
+                else:
+                    st.session_state.dexter_start_message = "⏳ Dexter is starting (may take 10-15 seconds)..."
+            else:
+                st.session_state.dexter_start_error = message
+        else:
+            st.session_state.dexter_manager = manager
+            st.session_state.dexter_started = True
+            st.session_state.dexter_start_message = "✅ Dexter is already running"
+    except ImportError:
+        # Dexter manager not available, skip silently
+        pass
+    except Exception as e:
+        # Silently fail - don't break the app if Dexter can't start
+        st.session_state.dexter_start_error = str(e)
+
+# Initialize Dexter on first run
+if 'dexter_started' not in st.session_state:
+    st.session_state.dexter_started = False
+    # Start in background thread so it doesn't block Streamlit
+    thread = threading.Thread(target=_start_dexter_background, daemon=True)
+    thread.start()
 
 def load_css():
     try:
@@ -53,6 +123,18 @@ with st.sidebar:
     st.title("📊 Fund Settings")
     
     col1, col2 = st.columns([3, 1])
+    with col1:
+        # Show Dexter status if available
+        if 'dexter_started' in st.session_state:
+            if 'dexter_manager' in st.session_state:
+                try:
+                    is_running = st.session_state.dexter_manager.is_running()
+                    if is_running:
+                        st.caption("🤖 Dexter: ✅ Running")
+                    else:
+                        st.caption("🤖 Dexter: ⏳ Starting...")
+                except:
+                    st.caption("🤖 Dexter: 🔄 Checking...")
     with col2:
         st.button("🌓", on_click=toggle_theme, help="Toggle theme")
     

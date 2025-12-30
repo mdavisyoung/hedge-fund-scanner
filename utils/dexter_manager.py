@@ -178,6 +178,10 @@ class DexterManager:
             
             if wait_for_ready:
                 # Wait for service to be ready
+                if timeout == 0:
+                    # Special case: don't wait, just return immediately
+                    return True, "Dexter service start command executed (checking in background)"
+                
                 print("[Dexter Manager] Waiting for service to start...")
                 start_time = time.time()
                 check_interval = 2  # Check every 2 seconds
