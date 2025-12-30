@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # Fetch all history for proper git operations
       
       - name: 🐍 Set up Python
         uses: actions/setup-python@v4
@@ -39,23 +40,29 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          
+          SCAN_DATE=$(date +'%Y-%m-%d %H:%M:%S')
+          echo "📅 Scan completed at: $SCAN_DATE"
 
           # Check if data directory has files to commit
           if [ -n "$(ls -A data/*.json 2>/dev/null)" ]; then
             git add data/*.json
             if ! git diff --quiet HEAD -- data/ 2>/dev/null; then
-              git commit -m "🤖 Daily scan: $(date +'%Y-%m-%d %H:%M')"
+              git commit -m "🤖 Daily scan: $SCAN_DATE"
               echo "✅ Changes committed"
             else
-              echo "ℹ️ No changes to commit"
+              echo "ℹ️ No changes to data files (scan completed but no updates)"
             fi
           else
-            echo "ℹ️ No data files generated (this is normal on weekends)"
+            echo "⚠️ No data files generated (this is normal on weekends or if scan failed)"
           fi
       
       - name: 📤 Push changes
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+        run: |
+          if git diff --quiet HEAD origin/main 2>/dev/null; then
+            echo "ℹ️ No changes to push (scan ran but no updates)"
+          else
+            git push origin main
+            echo "✅ Changes pushed successfully"
+          fi
         continue-on-error: true
