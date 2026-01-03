@@ -272,25 +272,26 @@ if analyze_button and ticker:
             
             # Use Dexter for strategy generation (default enabled)
             use_dexter = True  # Always use Dexter now
+            dexter_instance = None  # Initialize
             
             if use_dexter:
                 # Use native Python Dexter
                 try:
                     dexter_instance = create_dexter()
-except Exception as e:
-                        st.warning(f"⚠️ **Could not initialize Dexter:** {str(e)}")
-                        st.info("Falling back to standard strategy generator.")
-                        # Fallback to original
-                        with st.spinner("Generating strategy with xAI Grok..."):
-                            user_prefs = {
-                                "monthly_contribution": monthly_contribution,
-                                "risk_tolerance": risk_tolerance,
-                                "max_loss_per_trade": max_loss_per_trade,
-                                "portfolio_value": portfolio_value
-                            }
-                            strategy = strategy_gen.generate_strategy(evaluation, user_prefs)
-                            st.markdown(strategy)
-                        dexter_instance = None
+                except Exception as e:
+                    st.warning(f"⚠️ **Could not initialize Dexter:** {str(e)}")
+                    st.info("Falling back to standard strategy generator.")
+                    # Fallback to original
+                    with st.spinner("Generating strategy with xAI Grok..."):
+                        user_prefs = {
+                            "monthly_contribution": monthly_contribution,
+                            "risk_tolerance": risk_tolerance,
+                            "max_loss_per_trade": max_loss_per_trade,
+                            "portfolio_value": portfolio_value
+                        }
+                        strategy = strategy_gen.generate_strategy(evaluation, user_prefs)
+                        st.markdown(strategy)
+                    dexter_instance = None
                 
                 if dexter_instance:
                     # Show appropriate spinner message based on research type
