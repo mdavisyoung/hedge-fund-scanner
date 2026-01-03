@@ -7,8 +7,9 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils import StockAnalyzer, XAIStrategyGenerator
-from utils.dexter_client import DexterClient
 from utils.portfolio_context import PortfolioContext
+# Native Python Dexter
+from dexter import create_dexter
 from utils.storage import StorageManager
 from datetime import datetime
 import re
@@ -273,25 +274,25 @@ if analyze_button and ticker:
             use_dexter = True  # Always use Dexter now
             
             if use_dexter:
-                # Check if Dexter is available first
-                dexter_client = DexterClient()
-                dexter_available = dexter_client.health_check()
+                # Use native Python Dexter
+                try:
+                    dexter_instance = create_dexter()
+except Exception as e:
+                        st.warning(f"⚠️ **Could not initialize Dexter:** {str(e)}")
+                        st.info("Falling back to standard strategy generator.")
+                        # Fallback to original
+                        with st.spinner("Generating strategy with xAI Grok..."):
+                            user_prefs = {
+                                "monthly_contribution": monthly_contribution,
+                                "risk_tolerance": risk_tolerance,
+                                "max_loss_per_trade": max_loss_per_trade,
+                                "portfolio_value": portfolio_value
+                            }
+                            strategy = strategy_gen.generate_strategy(evaluation, user_prefs)
+                            st.markdown(strategy)
+                        dexter_instance = None
                 
-                if not dexter_available:
-                    st.warning("⚠️ **Dexter service is not running.** Falling back to standard strategy generator.")
-                    st.info("💡 To use Dexter (Hedge Fund Manager), start NewsAdmin:\n```bash\ncd NewsAdmin\nnpm run dev\n```")
-                    st.divider()
-                    # Fallback to original
-                    with st.spinner("Generating strategy with xAI Grok..."):
-                        user_prefs = {
-                            "monthly_contribution": monthly_contribution,
-                            "risk_tolerance": risk_tolerance,
-                            "max_loss_per_trade": max_loss_per_trade,
-                            "portfolio_value": portfolio_value
-                        }
-                        strategy = strategy_gen.generate_strategy(evaluation, user_prefs)
-                        st.markdown(strategy)
-                else:
+                if dexter_instance:
                     # Show appropriate spinner message based on research type
                     spinner_msg = "🤖 Dexter is performing deep business analysis... (This may take 2-3 minutes)" if use_dexter_deep else "🤖 Dexter is analyzing with portfolio context..."
                     with st.spinner(spinner_msg):
@@ -463,9 +464,8 @@ Current stock price: ${fundamentals['current_price']:.2f}
 Stock Type: {stock_type}
 Fundamentals: P/E={fundamentals.get('pe_ratio', 0):.2f}, ROE={fundamentals.get('roe', 0):.2f}%, Revenue Growth={fundamentals.get('revenue_growth', 0):.2f}%"""
                             
-                            # Use longer timeout for deep research
-                            timeout_seconds = 180 if use_dexter_deep else 120  # 3 minutes for deep research
-                            result = dexter_client.research(query, portfolio_context=context, timeout=timeout_seconds)
+                            # Native Python Dexter doesn't use timeout parameter
+                            result = dexter_instance.research(query)
                             strategy_text = result.get('answer', 'No response received')
                             
                             # Check if there was an error
