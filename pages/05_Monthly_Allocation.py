@@ -95,13 +95,8 @@ with st.sidebar:
     
     # Dexter status
     st.subheader("🤖 Dexter Status")
-    allocator = DexterAllocator()
-    
-    if allocator.dexter.health_check():
-        st.success("✅ Connected")
-    else:
-        st.error("❌ Not Running")
-        st.info("Start NewsAdmin to enable Dexter")
+    st.success("✅ Native Python Dexter Ready")
+    st.caption("No server needed!")
 
 # Main content
 st.markdown("---")
