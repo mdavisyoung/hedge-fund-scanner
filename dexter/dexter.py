@@ -116,7 +116,17 @@ class PlanningAgent:
     
     def create_plan(self, query: str) -> ResearchPlan:
         """Create a research plan from a query"""
+        # Get current date for context
+        today = datetime.now()
+        today_str = today.strftime('%Y-%m-%d')
+        one_year_ago = (today - timedelta(days=365)).strftime('%Y-%m-%d')
+        
         planning_prompt = f"""You are a financial research planning agent. Analyze the following query and break it down into specific, actionable research tasks.
+
+IMPORTANT DATE CONTEXT:
+- Today's date: {today_str}
+- One year ago: {one_year_ago}
+- Always use CURRENT/RECENT dates in your tasks, not old example dates!
 
 Available tools:
 - getStockAggregates: Get stock price data over time (parameters: symbol, from, to, timespan)
@@ -133,17 +143,19 @@ Return a JSON object with a "tasks" array. Each task should have:
 - tool: which tool to use
 - parameters: object with tool-specific parameters
 
-Example:
+Example (using CURRENT dates - today is {today_str}):
 {{
   "tasks": [
     {{
       "id": "task-1",
       "description": "Get Apple's stock price data for the last year",
       "tool": "getStockAggregates",
-      "parameters": {{ "symbol": "AAPL", "from": "2023-12-01", "to": "2024-12-01", "timespan": "day" }}
+      "parameters": {{ "symbol": "AAPL", "from": "{one_year_ago}", "to": "{today_str}", "timespan": "day" }}
     }}
   ]
-}}"""
+}}
+
+REMEMBER: Use {today_str} as 'to' date and calculate 'from' date based on how far back data is needed!"""
 
         try:
             completion = self.grok.chat.completions.create(
