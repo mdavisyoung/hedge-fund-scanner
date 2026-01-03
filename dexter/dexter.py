@@ -147,7 +147,7 @@ Example:
 
         try:
             completion = self.grok.chat.completions.create(
-                model="grok-beta",
+                model="grok-3",
                 messages=[{"role": "user", "content": planning_prompt}],
                 temperature=0.3,
                 response_format={"type": "json_object"}
@@ -297,7 +297,7 @@ Format your response as clear, professional prose suitable for a financial resea
 
         try:
             completion = self.grok.chat.completions.create(
-                model="grok-beta",
+                model="grok-3",
                 messages=[{"role": "user", "content": answer_prompt}],
                 temperature=0.7
             )
